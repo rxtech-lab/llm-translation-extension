@@ -4,6 +4,17 @@ This is a Chrome extension that allows you to translate webpage using `vercel ai
 
 The webpage simply uses `pageTranslator` to grab the text from the page and translate it using the `vercel ai sdk` api.
 
+## Tech stacks
+- TypeScript
+- React
+- Tailwind CSS
+- @tanstack/react-virtual
+- @vercel/ai
+- Nunjucks
+- Vite
+- Chrome Extension API
+- Vitest
+
 This extension contains tree pages:
 
 1. Settings page: where user can define the language to translate to, the api key, the openai model url and the model id.
