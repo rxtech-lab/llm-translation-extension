@@ -9,7 +9,12 @@
   "permissions": ["activeTab", "storage", "scripting"],
   "web_accessible_resources": [
     {
-      "resources": ["contentStyle.css", "dev-icon-128.png", "dev-icon-32.png"],
+      "resources": [
+        "contentStyle.css",
+        "dev-icon-128.png",
+        "dev-icon-32.png",
+        "src/pages/terms/index.html"
+      ],
       "matches": []
     }
   ]
