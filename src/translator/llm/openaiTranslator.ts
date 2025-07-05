@@ -1,7 +1,12 @@
-import { openai } from '@ai-sdk/openai';
-import { generateText, generateObject } from 'ai';
-import { z } from 'zod';
-import { Translator, TranslateProps, TranslateResult, Category, Terms } from './translator';
+import { createOpenAI } from "@ai-sdk/openai";
+import { generateObject } from "ai";
+import { z } from "zod";
+import type {
+  Category,
+  TranslateProps,
+  TranslateResult,
+  Translator,
+} from "./translator";
 
 export interface OpenAIConfig {
   apiKey: string;
@@ -11,19 +16,23 @@ export interface OpenAIConfig {
 
 const TranslateTextSchema = z.object({
   translatedText: z.string(),
-  newTerms: z.array(z.object({
-    original: z.string(),
-    translated: z.string(),
-    description: z.string()
-  }))
+  newTerms: z.array(
+    z.object({
+      original: z.string(),
+      translated: z.string(),
+      description: z.string(),
+    })
+  ),
 });
 
 const TranslateTermsSchema = z.object({
-  terms: z.array(z.object({
-    original: z.string(),
-    translated: z.string(),
-    description: z.string()
-  }))
+  terms: z.array(
+    z.object({
+      original: z.string(),
+      translated: z.string(),
+      description: z.string(),
+    })
+  ),
 });
 
 export class OpenAILLMTranslator implements Translator {
@@ -31,21 +40,29 @@ export class OpenAILLMTranslator implements Translator {
 
   async translateText(props: TranslateProps): Promise<TranslateResult> {
     const { currentText, siblingText, totalText, terms } = props;
-    
-    const termsContext = terms.map(category => 
-      `Category: ${category.name}\n${category.terms.map(term => 
-        `${term.original} -> {{${term.original}}} (${term.description})`
-      ).join('\n')}`
-    ).join('\n\n');
 
-    const prompt = `You are a professional translator. Translate the following text to ${this.targetLanguage}.
+    const termsContext = terms
+      .map(
+        (category) =>
+          `Category: ${category.name}\n${category.terms
+            .map(
+              (term) =>
+                `${term.original} -> {{${term.original}}} (${term.description})`
+            )
+            .join("\n")}`
+      )
+      .join("\n\n");
+
+    const prompt = `You are a professional translator. Translate the following text to ${
+      this.targetLanguage
+    }.
 
 Context from the page:
-${totalText.slice(0, 5).join('\n')}
-${totalText.length > 5 ? '...' : ''}
+${totalText.slice(0, 5).join("\n")}
+${totalText.length > 5 ? "..." : ""}
 
 Sibling texts (nearby elements):
-${siblingText.join('\n')}
+${siblingText.join("\n")}
 
 Current text to translate:
 "${currentText}"
@@ -60,11 +77,12 @@ Instructions:
 4. Maintain the original formatting and structure`;
 
     try {
+      const openai = createOpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseURL,
+      });
       const result = await generateObject({
-        model: openai(this.config.model, {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseURL,
-        }),
+        model: openai(this.config.model),
         prompt,
         schema: TranslateTextSchema,
         temperature: 0.3,
@@ -72,28 +90,32 @@ Instructions:
 
       return {
         translatedText: result.object.translatedText,
-        terms: result.object.newTerms
+        terms: result.object.newTerms,
       };
     } catch (error) {
-      console.error('Translation error:', error);
+      console.error("Translation error:", error);
       return {
         translatedText: currentText,
-        terms: []
+        terms: [],
       };
     }
   }
 
   async translateTerms(category: Category): Promise<Category> {
-    const termsToTranslate = category.terms.filter(term => !term.translated);
-    
+    const termsToTranslate = category.terms.filter((term) => !term.translated);
+
     if (termsToTranslate.length === 0) {
       return category;
     }
 
-    const prompt = `Translate the following terms to ${this.targetLanguage}. These are specialized terms from category "${category.name}".
+    const prompt = `Translate the following terms to ${
+      this.targetLanguage
+    }. These are specialized terms from category "${category.name}".
 
 Terms to translate:
-${termsToTranslate.map(term => `${term.original} (${term.description})`).join('\n')}
+${termsToTranslate
+  .map((term) => `${term.original} (${term.description})`)
+  .join("\n")}
 
 Please provide translations that are:
 1. Contextually appropriate for the category
@@ -101,32 +123,33 @@ Please provide translations that are:
 3. Preserve the meaning and nuance`;
 
     try {
+      const openai = createOpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseURL,
+      });
       const result = await generateObject({
-        model: openai(this.config.model, {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseURL,
-        }),
+        model: openai(this.config.model),
         prompt,
         schema: TranslateTermsSchema,
         temperature: 0.2,
       });
 
       const translations = new Map<string, string>();
-      result.object.terms.forEach(term => {
+      result.object.terms.forEach((term) => {
         translations.set(term.original, term.translated);
       });
 
-      const updatedTerms = category.terms.map(term => ({
+      const updatedTerms = category.terms.map((term) => ({
         ...term,
-        translated: translations.get(term.original) || term.translated
+        translated: translations.get(term.original) || term.translated,
       }));
 
       return {
         ...category,
-        terms: updatedTerms
+        terms: updatedTerms,
       };
     } catch (error) {
-      console.error('Terms translation error:', error);
+      console.error("Terms translation error:", error);
       return category;
     }
   }
