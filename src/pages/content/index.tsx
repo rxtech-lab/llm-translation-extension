@@ -1,7 +1,7 @@
-import { PageTranslator } from '../../translator/pageTranslator';
-import { OpenAILLMTranslator } from '../../translator/llm/openaiTranslator';
-import { Category } from '../../translator/llm/translator';
-import './style.css';
+import { PageTranslator } from "../../translator/pageTranslator";
+import { OpenAILLMTranslator } from "../../translator/llm/openaiTranslator";
+import { Category } from "../../translator/llm/translator";
+import "./style.css";
 
 class TranslationContentScript {
   private translator: PageTranslator | null = null;
@@ -10,27 +10,27 @@ class TranslationContentScript {
 
   constructor() {
     this.setupMessageListener();
-    console.log('Translation content script loaded');
+    console.log("Translation content script loaded");
   }
 
   private setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      console.log('Content script received message:', message);
+      console.log("Content script received message:", message);
 
       switch (message.action) {
-        case 'startTranslation':
+        case "startTranslation":
           this.handleStartTranslation(message.settings);
           break;
 
-        case 'stopTranslation':
+        case "stopTranslation":
           this.handleStopTranslation();
           break;
 
-        case 'restoreOriginal':
+        case "restoreOriginal":
           this.handleRestoreOriginal();
           break;
 
-        case 'termsUpdated':
+        case "termsUpdated":
           this.handleTermsUpdated(message.terms);
           break;
       }
@@ -39,13 +39,13 @@ class TranslationContentScript {
 
   private async handleStartTranslation(settings: any) {
     if (this.isTranslating) {
-      console.log('Translation already in progress');
+      console.log("Translation already in progress");
       return;
     }
 
     try {
       // Load existing terms
-      const termsResult = await chrome.storage.local.get(['translationTerms']);
+      const termsResult = await chrome.storage.local.get(["translationTerms"]);
       const existingTerms: Category[] = termsResult.translationTerms || [];
 
       // Create translator
@@ -53,17 +53,19 @@ class TranslationContentScript {
         {
           apiKey: settings.apiKey,
           model: settings.modelId,
-          baseURL: settings.modelUrl
+          baseURL: settings.modelUrl,
         },
         settings.targetLanguage
       );
 
-      this.translator = new PageTranslator(llmTranslator);
+      this.translator = new PageTranslator(llmTranslator, existingTerms);
       this.isTranslating = true;
 
       // Start translation
-      this.currentTranslationGenerator = this.translator.translate(document.body);
-      
+      this.currentTranslationGenerator = this.translator.translate(
+        document.body
+      );
+
       for await (const progress of this.currentTranslationGenerator) {
         if (!this.isTranslating) {
           break; // Stop if translation was cancelled
@@ -71,33 +73,34 @@ class TranslationContentScript {
 
         // Send progress to popup
         chrome.runtime.sendMessage({
-          action: 'translationProgress',
-          progress
+          action: "translationProgress",
+          progress,
         });
       }
 
       if (this.isTranslating) {
         // Translation completed successfully
-        const finalResult = await this.currentTranslationGenerator?.return(undefined);
-        
+        const finalResult = await this.currentTranslationGenerator?.return(
+          undefined
+        );
+
         // Save updated terms
         if (finalResult?.value?.terms) {
-          await chrome.storage.local.set({ 
-            translationTerms: finalResult.value.terms 
+          await chrome.storage.local.set({
+            translationTerms: finalResult.value.terms,
           });
         }
 
         chrome.runtime.sendMessage({
-          action: 'translationComplete',
-          result: finalResult?.value
+          action: "translationComplete",
+          result: finalResult?.value,
         });
       }
-
     } catch (error) {
-      console.error('Translation error:', error);
+      console.error("Translation error:", error);
       chrome.runtime.sendMessage({
-        action: 'translationError',
-        error: error instanceof Error ? error.message : 'Translation failed'
+        action: "translationError",
+        error: error instanceof Error ? error.message : "Translation failed",
       });
     } finally {
       this.isTranslating = false;
@@ -108,7 +111,7 @@ class TranslationContentScript {
   private handleStopTranslation() {
     if (this.isTranslating) {
       this.isTranslating = false;
-      
+
       // Try to stop the generator gracefully
       if (this.currentTranslationGenerator) {
         this.currentTranslationGenerator.return(undefined);
@@ -116,7 +119,7 @@ class TranslationContentScript {
       }
 
       chrome.runtime.sendMessage({
-        action: 'translationStopped'
+        action: "translationStopped",
       });
     }
   }
@@ -125,13 +128,13 @@ class TranslationContentScript {
     if (this.translator) {
       this.translator.restoreOriginalText();
       chrome.runtime.sendMessage({
-        action: 'textRestored'
+        action: "textRestored",
       });
     }
   }
 
   private handleTermsUpdated(terms: Category[]) {
-    console.log('Terms updated:', terms);
+    console.log("Terms updated:", terms);
     // Terms will be automatically loaded on next translation
   }
 }

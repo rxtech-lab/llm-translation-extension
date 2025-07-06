@@ -15,7 +15,7 @@
   "icons": {
     "128": "icon-128.png"
   },
-  "permissions": ["activeTab", "storage", "scripting"],
+  "permissions": ["activeTab", "storage", "scripting", "tabs"],
   "background": {
     "service_worker": "src/pages/background/index.ts"
   },

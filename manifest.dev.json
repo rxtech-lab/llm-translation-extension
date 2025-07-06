@@ -6,7 +6,7 @@
   "icons": {
     "128": "public/dev-icon-128.png"
   },
-  "permissions": ["activeTab", "storage", "scripting"],
+  "permissions": ["activeTab", "storage", "scripting", "tabs"],
   "web_accessible_resources": [
     {
       "resources": [
