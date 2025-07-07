@@ -6,6 +6,7 @@ import type {
   TranslateProps,
   TranslateResult,
   Translator,
+  TokenUsage,
 } from "./translator";
 
 export interface OpenAIConfig {
@@ -46,7 +47,7 @@ export class OpenAILLMTranslator implements Translator {
   }
 
   async translateText(props: TranslateProps): Promise<TranslateResult> {
-    const { currentText, siblingText, totalText, terms } = props;
+    const { currentText, siblingText, totalText, terms, signal } = props;
 
     const termsContext = terms
       .map(
@@ -92,21 +93,35 @@ Instructions:
       prompt,
       schema: TranslateTextSchema,
       temperature: 0.3,
+      abortSignal: signal,
     });
 
-    console.log(result.object);
+    console.log("result", result);
 
     return {
       translatedText: result.object.translatedText,
       terms: result.object.newTerms,
+      usage: result.usage
+        ? {
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens,
+          }
+        : undefined,
     };
   }
 
-  async translateTerms(category: Category): Promise<Category> {
+  async translateTerms(
+    category: Category,
+    signal?: AbortSignal
+  ): Promise<{ updatedCategory: Category; usage: TokenUsage }> {
     const termsToTranslate = category.terms.filter((term) => !term.translated);
 
     if (termsToTranslate.length === 0) {
-      return category;
+      return {
+        updatedCategory: category,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
     }
 
     const prompt = `Translate the following terms to ${
@@ -128,6 +143,7 @@ Please provide translations that are:
       prompt,
       schema: TranslateTermsSchema,
       temperature: 0.2,
+      abortSignal: signal,
     });
 
     const translations = new Map<string, string>();
@@ -141,8 +157,17 @@ Please provide translations that are:
     }));
 
     return {
-      ...category,
-      terms: updatedTerms,
+      updatedCategory: {
+        ...category,
+        terms: updatedTerms,
+      },
+      usage: result.usage
+        ? {
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens,
+          }
+        : { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     };
   }
 }

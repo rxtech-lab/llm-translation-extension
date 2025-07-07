@@ -1,18 +1,18 @@
-import type { Translator, Category, Terms } from "./llm/translator";
+import type { Category, Terms, TokenUsage, Translator } from "./llm/translator";
 
 export interface TranslationProgress {
   current: number;
   total: number;
   currentText?: string;
   translatedText?: string;
-  cost?: number;
+  usage?: TokenUsage;
   error?: string;
 }
 
 export interface TranslationResult {
   finalHtml: string;
   terms: Category[];
-  totalCost: number;
+  totalUsage: TokenUsage;
 }
 
 export class PageTranslator {
@@ -33,7 +33,11 @@ export class PageTranslator {
   static readonly DEFAULT_BATCH_SIZE = 5;
 
   private currentTerms: Category[] = [];
-  private totalCost = 0;
+  private totalUsage: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  };
   private originalTextMap = new Map<Text, string>();
 
   constructor(
@@ -45,7 +49,9 @@ export class PageTranslator {
   }
 
   public async *translate(
-    rootElement: HTMLElement
+    rootElement: HTMLElement,
+    signal?: AbortSignal,
+    timeout?: number
   ): AsyncGenerator<TranslationProgress, TranslationResult> {
     const textNodes = this.collectTextNodes(rootElement);
     const totalTexts = textNodes.map((node) => this.normalizeText(node));
@@ -55,19 +61,22 @@ export class PageTranslator {
       this.originalTextMap.set(node, node.nodeValue || "");
     });
 
-    yield { current: 0, total: textNodes.length, cost: this.totalCost };
+    yield { current: 0, total: textNodes.length, usage: this.totalUsage };
 
     // Process nodes in batches
     let completedCount = 0;
     for (let i = 0; i < textNodes.length; i += this.batchSize) {
       const batch = textNodes.slice(i, i + this.batchSize);
-      
+
       // Create translation promises for the batch
       const batchPromises = batch.map(async (node, batchIndex) => {
         const currentText = this.normalizeText(node);
         const globalIndex = i + batchIndex;
 
-        if (!currentText || currentText.length < PageTranslator.MIN_TEXT_LENGTH) {
+        if (
+          !currentText ||
+          currentText.length < PageTranslator.MIN_TEXT_LENGTH
+        ) {
           return {
             success: true,
             node,
@@ -75,10 +84,20 @@ export class PageTranslator {
             translatedText: currentText,
             globalIndex,
             error: undefined,
+            usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           };
         }
 
         try {
+          // Create timeout signal if timeout is specified
+          const timeoutSignal = timeout
+            ? AbortSignal.timeout(timeout)
+            : undefined;
+          const combinedSignal =
+            signal && timeoutSignal
+              ? AbortSignal.any([signal, timeoutSignal])
+              : signal || timeoutSignal;
+
           const siblingText = this.getSiblingTexts(node);
 
           const result = await this.translator.translateText({
@@ -86,10 +105,18 @@ export class PageTranslator {
             siblingText,
             totalText: totalTexts,
             terms: this.currentTerms,
+            signal: combinedSignal,
           });
 
           if (result.terms.length > 0) {
             this.addNewTerms(result.terms);
+          }
+
+          // Accumulate usage
+          if (result.usage) {
+            this.totalUsage.promptTokens += result.usage.promptTokens;
+            this.totalUsage.completionTokens += result.usage.completionTokens;
+            this.totalUsage.totalTokens += result.usage.totalTokens;
           }
 
           // Safely update the text node
@@ -102,6 +129,11 @@ export class PageTranslator {
             translatedText: result.translatedText,
             globalIndex,
             error: undefined,
+            usage: result.usage || {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+            },
           };
         } catch (error) {
           return {
@@ -110,26 +142,28 @@ export class PageTranslator {
             currentText,
             translatedText: undefined,
             globalIndex,
-            error: error instanceof Error ? error.message : "Translation failed",
+            error:
+              error instanceof Error ? error.message : "Translation failed",
+            usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           };
         }
       });
 
       // Wait for all promises in the batch to settle
       const batchResults = await Promise.allSettled(batchPromises);
-      
+
       // Process results and yield progress
       for (const result of batchResults) {
         completedCount++;
-        
-        if (result.status === 'fulfilled') {
+
+        if (result.status === "fulfilled") {
           const translationResult = result.value;
           yield {
             current: completedCount,
             total: textNodes.length,
             currentText: translationResult.currentText,
             translatedText: translationResult.translatedText,
-            cost: this.totalCost,
+            usage: this.totalUsage,
             error: translationResult.error,
           };
         } else {
@@ -139,7 +173,7 @@ export class PageTranslator {
             total: textNodes.length,
             currentText: "Unknown",
             error: "Batch processing failed",
-            cost: this.totalCost,
+            usage: this.totalUsage,
           };
         }
       }
@@ -150,17 +184,17 @@ export class PageTranslator {
       current: textNodes.length,
       total: textNodes.length + 1,
       currentText: "Translating terms...",
-      cost: this.totalCost,
+      usage: this.totalUsage,
     };
 
-    await this.translateAllTerms();
+    await this.translateAllTerms(signal, timeout);
 
     const finalHtml = this.renderFinalTemplate(rootElement.outerHTML);
 
     return {
       finalHtml,
       terms: this.currentTerms,
-      totalCost: this.totalCost,
+      totalUsage: this.totalUsage,
     };
   }
 
@@ -220,16 +254,46 @@ export class PageTranslator {
     });
   }
 
-  private async translateAllTerms(): Promise<void> {
+  private async translateAllTerms(
+    signal?: AbortSignal,
+    timeout?: number
+  ): Promise<void> {
     for (const category of this.currentTerms) {
       const untranslatedTerms = category.terms.filter(
         (term) => !term.translated
       );
       if (untranslatedTerms.length > 0) {
-        const translatedCategory = await this.translator.translateTerms(
-          category
-        );
-        Object.assign(category, translatedCategory);
+        try {
+          // Create timeout signal if timeout is specified
+          const timeoutSignal = timeout
+            ? AbortSignal.timeout(timeout)
+            : undefined;
+          const combinedSignal =
+            signal && timeoutSignal
+              ? AbortSignal.any([signal, timeoutSignal])
+              : signal || timeoutSignal;
+
+          const result = await this.translator.translateTerms(
+            category,
+            combinedSignal
+          );
+
+          Object.assign(category, result.updatedCategory);
+
+          // Accumulate usage
+          if (result.usage) {
+            this.totalUsage.promptTokens += result.usage.promptTokens;
+            this.totalUsage.completionTokens += result.usage.completionTokens;
+            this.totalUsage.totalTokens += result.usage.totalTokens;
+          }
+        } catch (error) {
+          console.error(
+            "Failed to translate terms for category:",
+            category.name,
+            error
+          );
+          // Continue with other categories even if one fails
+        }
       }
     }
   }

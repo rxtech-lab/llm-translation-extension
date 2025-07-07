@@ -11,12 +11,18 @@ import { Progress } from "@src/components/ui/progress";
 import { Badge } from "@src/components/ui/badge";
 import "@pages/content/style.css";
 
+interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 interface TranslationProgress {
   current: number;
   total: number;
   currentText?: string;
   translatedText?: string;
-  cost?: number;
+  usage?: TokenUsage;
   error?: string;
 }
 
@@ -53,7 +59,7 @@ export default function Popup() {
     }
 
     setIsTranslating(true);
-    setProgress({ current: 0, total: 0, cost: 0 });
+    setProgress({ current: 0, total: 0 });
 
     try {
       const [tab] = await chrome.tabs.query({
@@ -71,6 +77,7 @@ export default function Popup() {
       // Listen for progress updates
       const messageListener = (message: any) => {
         if (message.action === "translationProgress") {
+          console.log("Progress update:", message.progress);
           setProgress(message.progress);
         } else if (message.action === "translationComplete") {
           setIsTranslating(false);
@@ -231,9 +238,32 @@ export default function Popup() {
                   </div>
                 )}
 
-                {progress.cost !== undefined && (
+                {progress.usage && progress.usage.totalTokens > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      Token Usage:
+                    </div>
+                    <div className="text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span>Input:</span>
+                        <span className="font-mono">{progress.usage.promptTokens.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Output:</span>
+                        <span className="font-mono">{progress.usage.completionTokens.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-semibold">
+                        <span>Total:</span>
+                        <span className="font-mono">{progress.usage.totalTokens.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Debug: Show raw progress object */}
+                {process.env.NODE_ENV === 'development' && (
                   <div className="text-xs text-muted-foreground">
-                    Estimated cost: ${progress.cost.toFixed(4)}
+                    <pre>{JSON.stringify(progress, null, 2)}</pre>
                   </div>
                 )}
 

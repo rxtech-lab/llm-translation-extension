@@ -18,11 +18,17 @@ export interface TranslateProps {
   signal?: AbortSignal;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface TranslateResult {
   translatedText: string;
   // New terms that need to be added to the dictionary
   terms: Terms[];
-  cost?: number;
+  usage?: TokenUsage;
 }
 
 export interface Translator {
@@ -31,6 +37,6 @@ export interface Translator {
   /// Translate a category of terms, which may include multiple terms that need to be translated.
   translateTerms(
     category: Category,
-    signal?: AbortSignal,
-  ): Promise<{ updatedCategory: Category; cost: number }>;
+    signal?: AbortSignal
+  ): Promise<{ updatedCategory: Category; usage: TokenUsage }>;
 }
