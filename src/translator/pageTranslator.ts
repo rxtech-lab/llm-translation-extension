@@ -438,24 +438,33 @@ export class PageTranslator {
 
   private applyTermsReplacement(text: string): string {
     try {
-      // Create a context object with all translated terms wrapped in spans with tooltips
+      // Step 1: Convert text to nunjucks template by replacing terms with template variables
+      let template = text;
       const context: { [key: string]: string } = {};
 
       this.currentTerms.forEach((category) => {
         category.terms.forEach((term) => {
           if (term.translated && term.translated !== term.original) {
-            const escapedOriginal = this.escapeHtml(term.original);
-            const escapedTranslated = this.escapeHtml(term.translated);
-            context[
-              term.original
-            ] = `<span class="translated-term" title="${escapedOriginal}" style="cursor: pointer;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${escapedTranslated}</span>`;
+            // Escape the original term for regex
+            const escapedOriginal = this.escapeRegExp(term.original);
+            // Create a regex that matches whole words only
+            const regex = new RegExp(`\\b${escapedOriginal}\\b`, "gi");
+
+            // Create a unique template variable name (sanitize for nunjucks)
+            const templateVar = term.original.replace(/[^a-zA-Z0-9]/g, "_");
+
+            // Replace the original term with nunjucks template syntax
+            template = template.replace(regex, `{{ ${templateVar} }}`);
+
+            // Add the translation to the context
+            context[templateVar] = term.translated;
           }
         });
       });
 
-      // Use nunjucks to render the template with the context
+      // Step 2: Render the template with nunjucks
       const env = new nunjucks.Environment();
-      return env.renderString(text, context);
+      return env.renderString(template, context);
     } catch (error) {
       console.error("Failed to render template:", error);
       // Fallback to original text if nunjucks fails
