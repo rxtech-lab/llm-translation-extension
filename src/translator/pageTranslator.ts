@@ -1,4 +1,5 @@
 import type { Category, Terms, TokenUsage, Translator } from "./llm/translator";
+import * as nunjucks from "nunjucks";
 
 export interface TranslationProgress {
   current: number;
@@ -39,6 +40,7 @@ export class PageTranslator {
     totalTokens: 0,
   };
   private originalTextMap = new Map<Text, string>();
+  private translatedNodes = new Map<Text, string>();
 
   constructor(
     private translator: Translator,
@@ -111,6 +113,8 @@ export class PageTranslator {
 
           if (result.terms.length > 0) {
             await this.addNewTerms(result.terms);
+            // Translate new terms immediately
+            await this.translateNewTerms(result.terms, combinedSignal);
           }
 
           // Accumulate usage
@@ -120,14 +124,22 @@ export class PageTranslator {
             this.totalUsage.totalTokens += result.usage.totalTokens;
           }
 
+          // Store the base translated text before terms replacement
+          this.translatedNodes.set(node, result.translatedText);
+
+          // Apply terms replacement to the translated text before updating
+          const finalTranslatedText = this.applyTermsReplacement(
+            result.translatedText
+          );
+
           // Safely update the text node
-          this.updateTextNode(node, result.translatedText);
+          this.updateTextNode(node, finalTranslatedText);
 
           return {
             success: true,
             node,
             currentText,
-            translatedText: result.translatedText,
+            translatedText: finalTranslatedText,
             globalIndex,
             error: undefined,
             usage: result.usage || {
@@ -180,11 +192,11 @@ export class PageTranslator {
       }
     }
 
-    // Translate terms
+    // Translate any remaining terms
     yield {
       current: textNodes.length,
       total: textNodes.length + 1,
-      currentText: "Translating terms...",
+      currentText: "Translating remaining terms...",
       usage: this.totalUsage,
     };
 
@@ -201,10 +213,33 @@ export class PageTranslator {
 
   private updateTextNode(node: Text, translatedText: string): void {
     if (node.parentNode && node.nodeValue !== translatedText) {
-      node.nodeValue = translatedText;
+      const parent = node.parentNode;
+      const parentElement = node.parentElement;
+
+      // Check if the translated text contains HTML (spans with tooltips)
+      if (translatedText.includes('<span class="translated-term"')) {
+        // Create a temporary element to parse the HTML
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = translatedText;
+
+        // Replace the text node with the HTML content
+        const fragment = document.createDocumentFragment();
+
+        // Move all child nodes from temp div to fragment
+        while (tempDiv.firstChild) {
+          fragment.appendChild(tempDiv.firstChild);
+        }
+
+        // Replace the text node with the fragment
+        parent.replaceChild(fragment, node);
+      } else {
+        // Plain text replacement
+        node.nodeValue = translatedText;
+      }
+
       // Mark parent element as translated
-      if (node.parentElement) {
-        node.parentElement.setAttribute("data-translation", "true");
+      if (parentElement) {
+        parentElement.setAttribute("data-translation", "true");
       }
     }
   }
@@ -255,6 +290,11 @@ export class PageTranslator {
         hasNewTerms = true;
       }
     });
+
+    // Re-process already translated nodes with new terms
+    if (hasNewTerms) {
+      this.updateAllTranslatedNodesWithNewTerms();
+    }
 
     // Save terms to Chrome storage if new terms were added
     if (hasNewTerms && this.onTermsUpdated) {
@@ -311,23 +351,22 @@ export class PageTranslator {
   }
 
   private renderFinalTemplate(html: string): string {
-    let finalHtml = html;
-
-    this.currentTerms.forEach((category) => {
-      category.terms.forEach((term) => {
-        if (term.translated && term.translated !== term.original) {
-          // Simple string replacement instead of template rendering
-          const regex = new RegExp(this.escapeRegExp(term.original), "g");
-          finalHtml = finalHtml.replace(regex, term.translated);
-        }
-      });
-    });
-
-    return finalHtml;
+    // Apply final term replacements to the entire HTML
+    // This ensures terms are replaced even in HTML attributes and structure
+    return this.applyTermsReplacement(html);
   }
 
   private escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  private escapeHtml(string: string): string {
+    return string
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   public restoreOriginalText(): void {
@@ -395,5 +434,89 @@ export class PageTranslator {
         .flat();
     }
     return [];
+  }
+
+  private applyTermsReplacement(text: string): string {
+    try {
+      // Create a context object with all translated terms wrapped in spans with tooltips
+      const context: { [key: string]: string } = {};
+
+      this.currentTerms.forEach((category) => {
+        category.terms.forEach((term) => {
+          if (term.translated && term.translated !== term.original) {
+            const escapedOriginal = this.escapeHtml(term.original);
+            const escapedTranslated = this.escapeHtml(term.translated);
+            context[
+              term.original
+            ] = `<span class="translated-term" title="${escapedOriginal}" style="cursor: pointer;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${escapedTranslated}</span>`;
+          }
+        });
+      });
+
+      // Use nunjucks to render the template with the context
+      const env = new nunjucks.Environment();
+      return env.renderString(text, context);
+    } catch (error) {
+      console.error("Failed to render template:", error);
+      // Fallback to original text if nunjucks fails
+      return text;
+    }
+  }
+
+  private updateAllTranslatedNodesWithNewTerms(): void {
+    // Create a copy of the entries since we might be modifying the map during iteration
+    const entries = Array.from(this.translatedNodes.entries());
+
+    entries.forEach(([node, baseTranslatedText]) => {
+      // Check if the node is still in the document (it might have been replaced)
+      if (node.parentNode) {
+        const updatedText = this.applyTermsReplacement(baseTranslatedText);
+        this.updateTextNode(node, updatedText);
+      }
+    });
+  }
+
+  private async translateNewTerms(
+    newTerms: Terms[],
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (newTerms.length === 0) return;
+
+    // Find the General category where new terms were added
+    const generalCategory = this.currentTerms.find(
+      (cat) => cat.name === "General"
+    );
+    if (!generalCategory) return;
+
+    // Get the specific terms that need translation
+    const termsToTranslate = generalCategory.terms.filter(
+      (term) =>
+        newTerms.some((newTerm) => newTerm.original === term.original) &&
+        !term.translated
+    );
+
+    if (termsToTranslate.length === 0) return;
+
+    try {
+      const result = await this.translator.translateTerms(
+        generalCategory,
+        signal
+      );
+
+      // Update the category with translations
+      Object.assign(generalCategory, result.updatedCategory);
+
+      // Accumulate usage
+      if (result.usage) {
+        this.totalUsage.promptTokens += result.usage.promptTokens;
+        this.totalUsage.completionTokens += result.usage.completionTokens;
+        this.totalUsage.totalTokens += result.usage.totalTokens;
+      }
+
+      // Update all translated nodes with the new term translations
+      this.updateAllTranslatedNodesWithNewTerms();
+    } catch (error) {
+      console.error("Failed to translate new terms:", error);
+    }
   }
 }

@@ -1,20 +1,27 @@
 import { PageTranslator } from "../../translator/pageTranslator";
 import { OpenAILLMTranslator } from "../../translator/llm/openaiTranslator";
 import { Category } from "../../translator/llm/translator";
+import { defaultTermsRenderer } from "../../translator/termsRenderer";
 import "./style.css";
 
 class TranslationContentScript {
   private translator: PageTranslator | null = null;
   private isTranslating = false;
-  private currentTranslationGenerator: AsyncGenerator<any, any> | null = null;
+  private currentTranslationGenerator: AsyncGenerator<unknown, unknown> | null =
+    null;
 
   constructor() {
     this.setupMessageListener();
+    this.initializeTermsRenderer();
     console.log("Translation content script loaded");
   }
 
+  private async initializeTermsRenderer() {
+    await defaultTermsRenderer.loadTermsFromStorage();
+  }
+
   private setupMessageListener() {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
       console.log("Content script received message:", message);
 
       switch (message.action) {
@@ -37,7 +44,12 @@ class TranslationContentScript {
     });
   }
 
-  private async handleStartTranslation(settings: any) {
+  private async handleStartTranslation(settings: {
+    apiKey: string;
+    modelId: string;
+    modelUrl: string;
+    targetLanguage: string;
+  }) {
     if (this.isTranslating) {
       console.log("Translation already in progress");
       return;
@@ -116,8 +128,10 @@ class TranslationContentScript {
         );
 
         // Save updated terms
+        //@ts-expect-error
         if (finalResult?.value?.terms) {
           await chrome.storage.local.set({
+            //@ts-expect-error
             translationTerms: finalResult.value.terms,
           });
         }
@@ -166,6 +180,13 @@ class TranslationContentScript {
 
   private handleTermsUpdated(terms: Category[]) {
     console.log("Terms updated:", terms);
+
+    // Update terms renderer with new terms dictionary
+    defaultTermsRenderer.updateTermsDictionary(terms);
+
+    // Process all translated elements and update their text nodes
+    defaultTermsRenderer.processTranslatedElements();
+
     // Terms will be automatically loaded on next translation
   }
 }

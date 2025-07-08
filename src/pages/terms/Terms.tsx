@@ -8,6 +8,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@src/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@src/components/ui/dialog";
 import { Input } from "@src/components/ui/input";
 import { Label } from "@src/components/ui/label";
 import {
@@ -18,7 +26,7 @@ import {
   SelectValue,
 } from "@src/components/ui/select";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import { Category, Terms as TermsType } from "../../translator/llm/translator";
 
 interface TermsPageState {
@@ -26,8 +34,10 @@ interface TermsPageState {
   searchQuery: string;
   selectedCategory: string;
   editingTerm: TermsType | null;
+  originalEditingTerm: (TermsType & { categoryName: string }) | null;
   newTerm: Partial<TermsType>;
   loading: boolean;
+  isDialogOpen: boolean;
 }
 
 const initialState: TermsPageState = {
@@ -35,13 +45,18 @@ const initialState: TermsPageState = {
   searchQuery: "",
   selectedCategory: "all",
   editingTerm: null,
+  originalEditingTerm: null,
   newTerm: { original: "", translated: "", description: "" },
   loading: true,
+  isDialogOpen: false,
 };
 
 export default function Terms() {
   const [state, setState] = useState<TermsPageState>(initialState);
   const parentRef = React.useRef<HTMLDivElement>(null);
+  const originalId = useId();
+  const translatedId = useId();
+  const descriptionId = useId();
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
@@ -61,9 +76,29 @@ export default function Terms() {
     }
   };
 
-  const saveTerms = async () => {
+  const saveTerms = async (categories?: Category[]) => {
+    const categoriesToSave = categories || state.categories;
     try {
-      await chrome.storage.local.set({ translationTerms: state.categories });
+      await chrome.storage.local.set({ translationTerms: categoriesToSave });
+
+      // Notify all tabs about updated terms
+      try {
+        const tabs = await chrome.tabs.query({});
+        tabs.forEach((tab) => {
+          if (tab.id) {
+            chrome.tabs
+              .sendMessage(tab.id, {
+                action: "termsUpdated",
+                terms: categoriesToSave,
+              })
+              .catch(() => {
+                // Ignore errors for tabs without content script
+              });
+          }
+        });
+      } catch (error) {
+        console.error("Failed to notify tabs about terms update:", error);
+      }
     } catch (error) {
       console.error("Failed to save terms:", error);
     }
@@ -123,33 +158,36 @@ export default function Terms() {
         description: prev.newTerm.description || "",
       });
 
+      // Save the updated categories immediately
+      saveTerms(categories);
+
       return {
         ...prev,
         categories,
         newTerm: { original: "", translated: "", description: "" },
       };
     });
-
-    saveTerms();
   };
 
   const editTerm = (term: TermsType & { categoryName: string }) => {
     setState((prev) => ({
       ...prev,
       editingTerm: { ...term },
+      originalEditingTerm: { ...term },
+      isDialogOpen: true,
     }));
   };
 
   const updateTerm = () => {
-    if (!state.editingTerm) return;
+    if (!state.editingTerm || !state.originalEditingTerm) return;
 
     setState((prev) => {
       const categories = prev.categories.map((cat) => {
-        if (cat.name === (state.editingTerm as any).categoryName) {
+        if (cat.name === prev.originalEditingTerm!.categoryName) {
           return {
             ...cat,
             terms: cat.terms.map((term) =>
-              term.original === state.editingTerm!.original
+              term.original === prev.originalEditingTerm!.original
                 ? {
                     original: state.editingTerm!.original,
                     translated: state.editingTerm!.translated,
@@ -162,14 +200,26 @@ export default function Terms() {
         return cat;
       });
 
+      // Save the updated categories immediately
+      saveTerms(categories);
+
       return {
         ...prev,
         categories,
         editingTerm: null,
+        originalEditingTerm: null,
+        isDialogOpen: false,
       };
     });
+  };
 
-    saveTerms();
+  const cancelEdit = () => {
+    setState((prev) => ({
+      ...prev,
+      editingTerm: null,
+      originalEditingTerm: null,
+      isDialogOpen: false,
+    }));
   };
 
   const deleteTerm = (termToDelete: TermsType & { categoryName: string }) => {
@@ -188,10 +238,11 @@ export default function Terms() {
         })
         .filter((cat) => cat.terms.length > 0);
 
+      // Save the updated categories immediately
+      saveTerms(categories);
+
       return { ...prev, categories };
     });
-
-    saveTerms();
   };
 
   const categoryOptions = useMemo(() => {
@@ -253,7 +304,10 @@ export default function Terms() {
                     <Select
                       value={state.selectedCategory}
                       onValueChange={(value) =>
-                        setState((prev) => ({ ...prev, selectedCategory: value }))
+                        setState((prev) => ({
+                          ...prev,
+                          selectedCategory: value,
+                        }))
                       }
                     >
                       <SelectTrigger>
@@ -291,7 +345,10 @@ export default function Terms() {
                       onChange={(e) =>
                         setState((prev) => ({
                           ...prev,
-                          newTerm: { ...prev.newTerm, original: e.target.value },
+                          newTerm: {
+                            ...prev.newTerm,
+                            original: e.target.value,
+                          },
                         }))
                       }
                       placeholder="Original text"
@@ -306,7 +363,10 @@ export default function Terms() {
                       onChange={(e) =>
                         setState((prev) => ({
                           ...prev,
-                          newTerm: { ...prev.newTerm, translated: e.target.value },
+                          newTerm: {
+                            ...prev.newTerm,
+                            translated: e.target.value,
+                          },
                         }))
                       }
                       placeholder="Translation"
@@ -321,7 +381,10 @@ export default function Terms() {
                       onChange={(e) =>
                         setState((prev) => ({
                           ...prev,
-                          newTerm: { ...prev.newTerm, description: e.target.value },
+                          newTerm: {
+                            ...prev.newTerm,
+                            description: e.target.value,
+                          },
                         }))
                       }
                       placeholder="Description (optional)"
@@ -330,7 +393,9 @@ export default function Terms() {
                 </div>
                 <Button
                   onClick={addNewTerm}
-                  disabled={!state.newTerm.original || !state.newTerm.translated}
+                  disabled={
+                    !state.newTerm.original || !state.newTerm.translated
+                  }
                   className="w-full"
                 >
                   Add Term
@@ -355,7 +420,10 @@ export default function Terms() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                <div ref={parentRef} className="h-96 lg:h-[calc(100vh-300px)] overflow-auto">
+                <div
+                  ref={parentRef}
+                  className="h-96 lg:h-[calc(100vh-300px)] overflow-auto"
+                >
                   <div
                     style={{
                       height: `${virtualizer.getTotalSize()}px`,
@@ -365,8 +433,6 @@ export default function Terms() {
                   >
                     {virtualizer.getVirtualItems().map((virtualItem) => {
                       const term = filteredTerms[virtualItem.index];
-                      const isEditing =
-                        state.editingTerm?.original === term.original;
 
                       return (
                         <div
@@ -381,125 +447,45 @@ export default function Terms() {
                           }}
                           className="border-b border-gray-100 p-4"
                         >
-                          {isEditing ? (
-                            <div className="space-y-3">
-                              <div className="space-y-3">
-                                <input
-                                  type="text"
-                                  value={state.editingTerm?.original ?? ""}
-                                  onChange={(e) =>
-                                    setState((prev) => ({
-                                      ...prev,
-                                      editingTerm: prev.editingTerm
-                                        ? {
-                                            ...prev.editingTerm,
-                                            original: e.target.value,
-                                          }
-                                        : null,
-                                    }))
-                                  }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-                                  placeholder="Original text"
-                                />
-                                <input
-                                  type="text"
-                                  value={state.editingTerm?.translated ?? ""}
-                                  onChange={(e) =>
-                                    setState((prev) => ({
-                                      ...prev,
-                                      editingTerm: prev.editingTerm
-                                        ? {
-                                            ...prev.editingTerm,
-                                            translated: e.target.value,
-                                          }
-                                        : null,
-                                    }))
-                                  }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-                                  placeholder="Translation"
-                                />
-                                <input
-                                  type="text"
-                                  value={state.editingTerm?.description ?? ""}
-                                  onChange={(e) =>
-                                    setState((prev) => ({
-                                      ...prev,
-                                      editingTerm: prev.editingTerm
-                                        ? {
-                                            ...prev.editingTerm,
-                                            description: e.target.value,
-                                          }
-                                        : null,
-                                    }))
-                                  }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-                                  placeholder="Description (optional)"
-                                />
-                              </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  onClick={updateTerm}
-                                  size="sm"
-                                  className="h-8"
-                                >
-                                  Save
-                                </Button>
-                                <Button
-                                  onClick={() =>
-                                    setState((prev) => ({
-                                      ...prev,
-                                      editingTerm: null,
-                                    }))
-                                  }
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8"
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium text-gray-900 truncate">
-                                    {term.original}
-                                  </div>
-                                  <div className="text-gray-600">→</div>
-                                  <div className="text-blue-600 truncate">
-                                    {term.translated}
-                                  </div>
-                                  <Badge variant="outline" className="shrink-0">
-                                    {term.categoryName}
-                                  </Badge>
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <div className="font-medium text-gray-900 truncate">
+                                  {term.original}
                                 </div>
-                                {term.description && (
-                                  <div className="text-sm text-gray-500 mt-1 line-clamp-2">
-                                    {term.description}
-                                  </div>
-                                )}
+                                <div className="text-gray-600">→</div>
+                                <div className="text-blue-600 truncate">
+                                  {term.translated}
+                                </div>
+                                <Badge variant="outline" className="shrink-0">
+                                  {term.categoryName}
+                                </Badge>
                               </div>
-                              <div className="flex gap-2 ml-4 shrink-0">
-                                <Button
-                                  onClick={() => editTerm(term)}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 text-primary hover:text-primary"
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  onClick={() => deleteTerm(term)}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 text-destructive hover:text-destructive"
-                                >
-                                  Delete
-                                </Button>
-                              </div>
+                              {term.description && (
+                                <div className="text-sm text-gray-500 mt-1 line-clamp-2">
+                                  {term.description}
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <div className="flex gap-2 ml-4 shrink-0">
+                              <Button
+                                onClick={() => editTerm(term)}
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-primary hover:text-primary"
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                onClick={() => deleteTerm(term)}
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-destructive hover:text-destructive"
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -509,6 +495,106 @@ export default function Terms() {
             </Card>
           </div>
         </div>
+
+        {/* Edit Term Dialog */}
+        <Dialog
+          open={state.isDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              cancelEdit();
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Edit Term</DialogTitle>
+              <DialogDescription>
+                Update the translation term and its details.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor={originalId} className="text-right">
+                  Original
+                </Label>
+                <Input
+                  id={originalId}
+                  value={state.editingTerm?.original ?? ""}
+                  onChange={(e) =>
+                    setState((prev) => ({
+                      ...prev,
+                      editingTerm: prev.editingTerm
+                        ? {
+                            ...prev.editingTerm,
+                            original: e.target.value,
+                          }
+                        : null,
+                    }))
+                  }
+                  className="col-span-3"
+                  placeholder="Original text"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor={translatedId} className="text-right">
+                  Translation
+                </Label>
+                <Input
+                  id={translatedId}
+                  value={state.editingTerm?.translated ?? ""}
+                  onChange={(e) =>
+                    setState((prev) => ({
+                      ...prev,
+                      editingTerm: prev.editingTerm
+                        ? {
+                            ...prev.editingTerm,
+                            translated: e.target.value,
+                          }
+                        : null,
+                    }))
+                  }
+                  className="col-span-3"
+                  placeholder="Translation"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor={descriptionId} className="text-right">
+                  Description
+                </Label>
+                <Input
+                  id={descriptionId}
+                  value={state.editingTerm?.description ?? ""}
+                  onChange={(e) =>
+                    setState((prev) => ({
+                      ...prev,
+                      editingTerm: prev.editingTerm
+                        ? {
+                            ...prev.editingTerm,
+                            description: e.target.value,
+                          }
+                        : null,
+                    }))
+                  }
+                  className="col-span-3"
+                  placeholder="Description (optional)"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={cancelEdit}>
+                Cancel
+              </Button>
+              <Button
+                onClick={updateTerm}
+                disabled={
+                  !state.editingTerm?.original || !state.editingTerm?.translated
+                }
+              >
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

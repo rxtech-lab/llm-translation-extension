@@ -5,6 +5,7 @@ import type {
   TranslateProps,
   TranslateResult,
   Category,
+  TokenUsage,
 } from "./llm/translator";
 import { describe, expect, it } from "vitest";
 
@@ -29,19 +30,34 @@ class MockTranslator implements Translator {
     return {
       translatedText,
       terms,
+      usage: {
+        promptTokens: 10,
+        completionTokens: 5,
+        totalTokens: 15,
+      },
     };
   }
 
-  async translateTerms(category: Category): Promise<Category> {
-    // Mock term translation: just add "[TERM]" prefix
+  async translateTerms(
+    category: Category,
+    signal?: AbortSignal
+  ): Promise<{ updatedCategory: Category; usage: TokenUsage }> {
+    // Mock term translation: preserve already translated terms, or add "[TERM]" prefix to untranslated terms
     const translatedTerms = category.terms.map((term) => ({
       ...term,
       translated: term.translated || `[TERM] ${term.original}`,
     }));
 
     return {
-      ...category,
-      terms: translatedTerms,
+      updatedCategory: {
+        ...category,
+        terms: translatedTerms,
+      },
+      usage: {
+        promptTokens: 5,
+        completionTokens: 3,
+        totalTokens: 8,
+      },
     };
   }
 }
@@ -120,14 +136,16 @@ describe("PageTranslator", () => {
     expect(progressUpdates[0]).toMatchObject({
       current: 0,
       total: 2,
-      cost: 0,
     });
 
     // Final result should contain translated HTML and terms
     expect(finalResult).toHaveProperty("finalHtml");
     expect(finalResult).toHaveProperty("terms");
+    expect(finalResult).toHaveProperty("totalUsage");
     // @ts-expect-error Skip type checking for this test
     expect(finalResult.terms).toBeInstanceOf(Array);
+    // @ts-expect-error Skip type checking for this test
+    expect(finalResult.totalUsage.totalTokens).toBeGreaterThan(0);
   });
 
   it("should extract and translate terms", async () => {
@@ -165,8 +183,14 @@ describe("PageTranslator", () => {
       async translateText(): Promise<TranslateResult> {
         throw new Error("Translation failed");
       },
-      async translateTerms(category: Category): Promise<Category> {
-        return category;
+      async translateTerms(
+        category: Category,
+        signal?: AbortSignal
+      ): Promise<{ updatedCategory: Category; usage: TokenUsage }> {
+        return {
+          updatedCategory: category,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
       },
     };
 
@@ -228,5 +252,139 @@ describe("PageTranslator", () => {
     expect((translationUpdates[0] as any).translatedText).toBe(
       "[TRANSLATED] Hello world"
     );
+  });
+
+  it("should replace terms in final HTML", async () => {
+    const element = document.createElement("div");
+    element.innerHTML =
+      "<p>Using API for data processing</p><span>The API endpoint</span>";
+
+    const mockTranslator = new MockTranslator();
+    const translator = new PageTranslator(mockTranslator);
+
+    // Use the generator manually to capture return value
+    const generator = translator.translate(element);
+    let result = await generator.next();
+
+    while (!result.done) {
+      result = await generator.next();
+    }
+
+    const finalResult = result.value;
+
+    // The final HTML should have replaced "API" with "接口"
+    expect(finalResult.finalHtml).toContain("接口");
+    expect(finalResult.finalHtml).not.toContain("API");
+
+    // Check that the structure is preserved (accounting for data-translation attributes)
+    expect(finalResult.finalHtml).toContain('<p data-translation="true">');
+    expect(finalResult.finalHtml).toContain('<span data-translation="true">');
+    expect(finalResult.finalHtml).toContain("data processing");
+    expect(finalResult.finalHtml).toContain("endpoint");
+  });
+
+  it("should handle multiple term replacements in HTML", async () => {
+    // Create a mock translator that extracts multiple terms
+    const multiTermTranslator: Translator = {
+      async translateText(props: TranslateProps): Promise<TranslateResult> {
+        const { currentText } = props;
+        const translatedText = `[TRANSLATED] ${currentText}`;
+
+        // Extract different terms based on content
+        const terms = [];
+        if (currentText.includes("API")) {
+          terms.push({
+            original: "API",
+            translated: "接口",
+            description: "Application Programming Interface",
+          });
+        }
+        if (currentText.includes("user")) {
+          terms.push({
+            original: "user",
+            translated: "用户",
+            description: "A person who uses the system",
+          });
+        }
+
+        return {
+          translatedText,
+          terms,
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        };
+      },
+      async translateTerms(
+        category: Category,
+        signal?: AbortSignal
+      ): Promise<{ updatedCategory: Category; usage: TokenUsage }> {
+        const translatedTerms = category.terms.map((term) => ({
+          ...term,
+          translated: term.translated || `[TERM] ${term.original}`,
+        }));
+
+        return {
+          updatedCategory: { ...category, terms: translatedTerms },
+          usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+        };
+      },
+    };
+
+    const element = document.createElement("div");
+    element.innerHTML =
+      "<p>The user calls the API</p><div>API user guide</div>";
+
+    const translator = new PageTranslator(multiTermTranslator);
+
+    // Use the generator manually to capture return value
+    const generator = translator.translate(element);
+    let result = await generator.next();
+
+    while (!result.done) {
+      result = await generator.next();
+    }
+
+    const finalResult = result.value;
+
+    // Both terms should be replaced in the final HTML
+    expect(finalResult.finalHtml).toContain("用户");
+    expect(finalResult.finalHtml).toContain("接口");
+    expect(finalResult.finalHtml).not.toContain("API");
+    expect(finalResult.finalHtml).not.toContain("user");
+
+    // Should contain both terms in the terms array
+    expect(finalResult.terms[0].terms).toHaveLength(2);
+  });
+
+  it("should preserve HTML structure after term replacement", async () => {
+    const element = document.createElement("div");
+    element.innerHTML = `
+      <h1>API Documentation</h1>
+      <p class="intro">Welcome to our API guide</p>
+      <div data-testid="content">
+        <span>API usage examples</span>
+      </div>
+    `;
+
+    const mockTranslator = new MockTranslator();
+    const translator = new PageTranslator(mockTranslator);
+
+    const generator = translator.translate(element);
+    let result = await generator.next();
+
+    while (!result.done) {
+      result = await generator.next();
+    }
+
+    const finalResult = result.value;
+
+    // HTML structure should be preserved (accounting for data-translation attributes)
+    expect(finalResult.finalHtml).toContain('<h1 data-translation="true">');
+    expect(finalResult.finalHtml).toContain('class="intro"');
+    expect(finalResult.finalHtml).toContain('data-testid="content"');
+    expect(finalResult.finalHtml).toContain('<span data-translation="true">');
+
+    // Terms should be replaced
+    expect(finalResult.finalHtml).toContain("接口");
+    expect(finalResult.finalHtml).not.toContain("API");
   });
 });
