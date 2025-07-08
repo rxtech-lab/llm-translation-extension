@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, type LanguageModelV1 } from "ai";
+import { generateObject, generateText, Output, type LanguageModelV1 } from "ai";
 import { z } from "zod";
 import type {
   Category,
@@ -83,24 +83,26 @@ ${termsContext}
 
 Instructions:
 1.  Translate the "Current text to translate" to ${this.targetLanguage}.
-2.  You MUST use the translations provided in the "Existing terms dictionary". For example, if the dictionary has "user -> utilisateur", you must replace "user" with "utilisateur".
+2.  You MUST use the translations provided in the "Existing terms dictionary". For example, if the dictionary has "user -> user_term", you must replace "user" with "user_term".
 3.  If you identify any new, specialized terms in the "Current text to translate" that are not in the dictionary, add them to the \`newTerms\` array with their translation and a brief description.
 4.  Maintain the original formatting and structure.
-5.  Return ONLY the translated text in \`translatedText\`, without any extra explanations or quotes.`;
+5.  Return ONLY the translated text in \`translatedText\`, without any extra explanations or quotes.
+6.  Once you faced a new term, replace it with {{term_name}} using the jinja2 syntax and put the term in the newTerms array. This term_name can be anything that describe the term. Use existing terms if you think it's relevant.
+7.  Special terms could be: person, company, product, service, etc. Please replace them all with {{term_name}}.
+`;
 
-    const result = await generateObject({
+    const result = await generateText({
       model: this.model,
       prompt,
-      schema: TranslateTextSchema,
-      temperature: 0.3,
+      experimental_output: Output.object({
+        schema: TranslateTextSchema,
+      }),
       abortSignal: signal,
     });
 
-    console.log("result", result);
-
     return {
-      translatedText: result.object.translatedText,
-      terms: result.object.newTerms,
+      translatedText: result.experimental_output.translatedText,
+      terms: result.experimental_output.newTerms,
       usage: result.usage
         ? {
             promptTokens: result.usage.promptTokens,

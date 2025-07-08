@@ -209,8 +209,8 @@ export default function Terms() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto py-8 px-4 space-y-8">
-        <div className="text-center space-y-2">
+      <div className="max-w-7xl mx-auto py-8 px-4">
+        <div className="text-center space-y-2 mb-8">
           <h1 className="text-4xl font-bold tracking-tight">
             Terms Management
           </h1>
@@ -219,285 +219,296 @@ export default function Terms() {
           </p>
         </div>
 
-        {/* Search and Filter Controls */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Search & Filter</CardTitle>
-            <CardDescription>
-              Find and organize your translation terms
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="search">Search Terms</Label>
-                {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
-                <Input
-                  id="search"
-                  value={state.searchQuery}
-                  onChange={(e) =>
-                    setState((prev) => ({
-                      ...prev,
-                      searchQuery: e.target.value,
-                    }))
-                  }
-                  placeholder="Search by original text, translation, or description..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Filter by Category</Label>
-                <Select
-                  value={state.selectedCategory}
-                  onValueChange={(value) =>
-                    setState((prev) => ({ ...prev, selectedCategory: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categoryOptions.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category === "all" ? "All Categories" : category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Add New Term */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Add New Term</CardTitle>
-            <CardDescription>
-              Add a new translation term to your vocabulary
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="original">Original Text</Label>
-                {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
-                <Input
-                  id="original"
-                  value={state.newTerm.original || ""}
-                  onChange={(e) =>
-                    setState((prev) => ({
-                      ...prev,
-                      newTerm: { ...prev.newTerm, original: e.target.value },
-                    }))
-                  }
-                  placeholder="Original text"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="translated">Translation</Label>
-                {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
-                <Input
-                  id="translated"
-                  value={state.newTerm.translated || ""}
-                  onChange={(e) =>
-                    setState((prev) => ({
-                      ...prev,
-                      newTerm: { ...prev.newTerm, translated: e.target.value },
-                    }))
-                  }
-                  placeholder="Translation"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
-                <Input
-                  id="description"
-                  value={state.newTerm.description || ""}
-                  onChange={(e) =>
-                    setState((prev) => ({
-                      ...prev,
-                      newTerm: { ...prev.newTerm, description: e.target.value },
-                    }))
-                  }
-                  placeholder="Description (optional)"
-                />
-              </div>
-            </div>
-            <Button
-              onClick={addNewTerm}
-              disabled={!state.newTerm.original || !state.newTerm.translated}
-              className="w-full md:w-auto"
-            >
-              Add Term
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Terms List */}
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>Terms</CardTitle>
-              <Badge variant="secondary">
-                {filteredTerms.length} term
-                {filteredTerms.length !== 1 ? "s" : ""}
-              </Badge>
-            </div>
-            <CardDescription>
-              Manage your translation vocabulary
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div ref={parentRef} className="h-96 overflow-auto">
-              <div
-                style={{
-                  height: `${virtualizer.getTotalSize()}px`,
-                  width: "100%",
-                  position: "relative",
-                }}
-              >
-                {virtualizer.getVirtualItems().map((virtualItem) => {
-                  const term = filteredTerms[virtualItem.index];
-                  const isEditing =
-                    state.editingTerm?.original === term.original;
-
-                  return (
-                    <div
-                      key={virtualItem.key}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: `${virtualItem.size}px`,
-                        transform: `translateY(${virtualItem.start}px)`,
-                      }}
-                      className="border-b border-gray-100 p-4"
+        {/* Two-column grid layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left column - Controls */}
+          <div className="space-y-6">
+            {/* Search and Filter Controls */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Search & Filter</CardTitle>
+                <CardDescription>
+                  Find and organize your translation terms
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="search">Search Terms</Label>
+                    {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
+                    <Input
+                      id="search"
+                      value={state.searchQuery}
+                      onChange={(e) =>
+                        setState((prev) => ({
+                          ...prev,
+                          searchQuery: e.target.value,
+                        }))
+                      }
+                      placeholder="Search by original text, translation, or description..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="category">Filter by Category</Label>
+                    <Select
+                      value={state.selectedCategory}
+                      onValueChange={(value) =>
+                        setState((prev) => ({ ...prev, selectedCategory: value }))
+                      }
                     >
-                      {isEditing ? (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <input
-                              type="text"
-                              value={state.editingTerm?.original ?? ""}
-                              onChange={(e) =>
-                                setState((prev) => ({
-                                  ...prev,
-                                  editingTerm: prev.editingTerm
-                                    ? {
-                                        ...prev.editingTerm,
-                                        original: e.target.value,
-                                      }
-                                    : null,
-                                }))
-                              }
-                              className="px-3 py-1 border border-gray-300 rounded text-sm"
-                            />
-                            <input
-                              type="text"
-                              value={state.editingTerm?.translated ?? ""}
-                              onChange={(e) =>
-                                setState((prev) => ({
-                                  ...prev,
-                                  editingTerm: prev.editingTerm
-                                    ? {
-                                        ...prev.editingTerm,
-                                        translated: e.target.value,
-                                      }
-                                    : null,
-                                }))
-                              }
-                              className="px-3 py-1 border border-gray-300 rounded text-sm"
-                            />
-                            <input
-                              type="text"
-                              value={state.editingTerm?.description ?? ""}
-                              onChange={(e) =>
-                                setState((prev) => ({
-                                  ...prev,
-                                  editingTerm: prev.editingTerm
-                                    ? {
-                                        ...prev.editingTerm,
-                                        description: e.target.value,
-                                      }
-                                    : null,
-                                }))
-                              }
-                              className="px-3 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={updateTerm}
-                              size="sm"
-                              className="h-8"
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              onClick={() =>
-                                setState((prev) => ({
-                                  ...prev,
-                                  editingTerm: null,
-                                }))
-                              }
-                              variant="outline"
-                              size="sm"
-                              className="h-8"
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-4">
-                              <div className="font-medium text-gray-900">
-                                {term.original}
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categoryOptions.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category === "all" ? "All Categories" : category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Add New Term */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Add New Term</CardTitle>
+                <CardDescription>
+                  Add a new translation term to your vocabulary
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="original">Original Text</Label>
+                    {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
+                    <Input
+                      id="original"
+                      value={state.newTerm.original || ""}
+                      onChange={(e) =>
+                        setState((prev) => ({
+                          ...prev,
+                          newTerm: { ...prev.newTerm, original: e.target.value },
+                        }))
+                      }
+                      placeholder="Original text"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="translated">Translation</Label>
+                    {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
+                    <Input
+                      id="translated"
+                      value={state.newTerm.translated || ""}
+                      onChange={(e) =>
+                        setState((prev) => ({
+                          ...prev,
+                          newTerm: { ...prev.newTerm, translated: e.target.value },
+                        }))
+                      }
+                      placeholder="Translation"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
+                    <Input
+                      id="description"
+                      value={state.newTerm.description || ""}
+                      onChange={(e) =>
+                        setState((prev) => ({
+                          ...prev,
+                          newTerm: { ...prev.newTerm, description: e.target.value },
+                        }))
+                      }
+                      placeholder="Description (optional)"
+                    />
+                  </div>
+                </div>
+                <Button
+                  onClick={addNewTerm}
+                  disabled={!state.newTerm.original || !state.newTerm.translated}
+                  className="w-full"
+                >
+                  Add Term
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right column - Terms List */}
+          <div className="space-y-6">
+            <Card className="h-fit">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Terms</CardTitle>
+                  <Badge variant="secondary">
+                    {filteredTerms.length} term
+                    {filteredTerms.length !== 1 ? "s" : ""}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  Manage your translation vocabulary
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div ref={parentRef} className="h-96 lg:h-[calc(100vh-300px)] overflow-auto">
+                  <div
+                    style={{
+                      height: `${virtualizer.getTotalSize()}px`,
+                      width: "100%",
+                      position: "relative",
+                    }}
+                  >
+                    {virtualizer.getVirtualItems().map((virtualItem) => {
+                      const term = filteredTerms[virtualItem.index];
+                      const isEditing =
+                        state.editingTerm?.original === term.original;
+
+                      return (
+                        <div
+                          key={virtualItem.key}
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: "100%",
+                            height: `${virtualItem.size}px`,
+                            transform: `translateY(${virtualItem.start}px)`,
+                          }}
+                          className="border-b border-gray-100 p-4"
+                        >
+                          {isEditing ? (
+                            <div className="space-y-3">
+                              <div className="space-y-3">
+                                <input
+                                  type="text"
+                                  value={state.editingTerm?.original ?? ""}
+                                  onChange={(e) =>
+                                    setState((prev) => ({
+                                      ...prev,
+                                      editingTerm: prev.editingTerm
+                                        ? {
+                                            ...prev.editingTerm,
+                                            original: e.target.value,
+                                          }
+                                        : null,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                                  placeholder="Original text"
+                                />
+                                <input
+                                  type="text"
+                                  value={state.editingTerm?.translated ?? ""}
+                                  onChange={(e) =>
+                                    setState((prev) => ({
+                                      ...prev,
+                                      editingTerm: prev.editingTerm
+                                        ? {
+                                            ...prev.editingTerm,
+                                            translated: e.target.value,
+                                          }
+                                        : null,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                                  placeholder="Translation"
+                                />
+                                <input
+                                  type="text"
+                                  value={state.editingTerm?.description ?? ""}
+                                  onChange={(e) =>
+                                    setState((prev) => ({
+                                      ...prev,
+                                      editingTerm: prev.editingTerm
+                                        ? {
+                                            ...prev.editingTerm,
+                                            description: e.target.value,
+                                          }
+                                        : null,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                                  placeholder="Description (optional)"
+                                />
                               </div>
-                              <div className="text-gray-600">→</div>
-                              <div className="text-blue-600">
-                                {term.translated}
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={updateTerm}
+                                  size="sm"
+                                  className="h-8"
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  onClick={() =>
+                                    setState((prev) => ({
+                                      ...prev,
+                                      editingTerm: null,
+                                    }))
+                                  }
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8"
+                                >
+                                  Cancel
+                                </Button>
                               </div>
-                              <Badge variant="outline">
-                                {term.categoryName}
-                              </Badge>
                             </div>
-                            {term.description && (
-                              <div className="text-sm text-gray-500 mt-1">
-                                {term.description}
+                          ) : (
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="font-medium text-gray-900 truncate">
+                                    {term.original}
+                                  </div>
+                                  <div className="text-gray-600">→</div>
+                                  <div className="text-blue-600 truncate">
+                                    {term.translated}
+                                  </div>
+                                  <Badge variant="outline" className="shrink-0">
+                                    {term.categoryName}
+                                  </Badge>
+                                </div>
+                                {term.description && (
+                                  <div className="text-sm text-gray-500 mt-1 line-clamp-2">
+                                    {term.description}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => editTerm(term)}
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-primary hover:text-primary"
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              onClick={() => deleteTerm(term)}
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-destructive hover:text-destructive"
-                            >
-                              Delete
-                            </Button>
-                          </div>
+                              <div className="flex gap-2 ml-4 shrink-0">
+                                <Button
+                                  onClick={() => editTerm(term)}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 text-primary hover:text-primary"
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  onClick={() => deleteTerm(term)}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 text-destructive hover:text-destructive"
+                                >
+                                  Delete
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

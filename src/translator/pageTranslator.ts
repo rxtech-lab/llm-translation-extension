@@ -43,7 +43,8 @@ export class PageTranslator {
   constructor(
     private translator: Translator,
     private previousTerms: Category[] = [],
-    private batchSize: number = PageTranslator.DEFAULT_BATCH_SIZE
+    private batchSize: number = PageTranslator.DEFAULT_BATCH_SIZE,
+    private onTermsUpdated?: (terms: Category[]) => Promise<void>
   ) {
     this.currentTerms = this.previousTerms;
   }
@@ -109,7 +110,7 @@ export class PageTranslator {
           });
 
           if (result.terms.length > 0) {
-            this.addNewTerms(result.terms);
+            await this.addNewTerms(result.terms);
           }
 
           // Accumulate usage
@@ -233,7 +234,7 @@ export class PageTranslator {
     return siblings.slice(0, 5); // Limit to 5 siblings
   }
 
-  private addNewTerms(newTerms: Terms[]): void {
+  private async addNewTerms(newTerms: Terms[]): Promise<void> {
     if (newTerms.length === 0) return;
 
     let generalCategory = this.currentTerms.find(
@@ -244,14 +245,25 @@ export class PageTranslator {
       this.currentTerms.push(generalCategory);
     }
 
+    let hasNewTerms = false;
     newTerms.forEach((term) => {
       const exists = generalCategory!.terms.some(
         (t) => t.original === term.original
       );
       if (!exists) {
         generalCategory!.terms.push(term);
+        hasNewTerms = true;
       }
     });
+
+    // Save terms to Chrome storage if new terms were added
+    if (hasNewTerms && this.onTermsUpdated) {
+      try {
+        await this.onTermsUpdated(this.currentTerms);
+      } catch (error) {
+        console.error("Failed to save terms to storage:", error);
+      }
+    }
   }
 
   private async translateAllTerms(

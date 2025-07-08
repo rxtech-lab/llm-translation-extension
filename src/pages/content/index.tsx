@@ -58,7 +58,38 @@ class TranslationContentScript {
         settings.targetLanguage
       );
 
-      this.translator = new PageTranslator(llmTranslator, existingTerms);
+      // Callback function to save terms to Chrome storage
+      const saveTermsCallback = async (terms: Category[]) => {
+        try {
+          console.log("Saving terms", terms);
+          console.log("chrome.storage.local", chrome);
+          await chrome.storage.local.set({ translationTerms: terms });
+
+          // Notify all tabs about updated terms
+          const tabs = await chrome.tabs.query({});
+          tabs.forEach((tab) => {
+            if (tab.id) {
+              chrome.tabs
+                .sendMessage(tab.id, {
+                  action: "termsUpdated",
+                  terms,
+                })
+                .catch(() => {
+                  // Ignore errors for tabs without content script
+                });
+            }
+          });
+        } catch (error) {
+          console.error("Failed to save terms during translation:", error);
+        }
+      };
+
+      this.translator = new PageTranslator(
+        llmTranslator,
+        existingTerms,
+        PageTranslator.DEFAULT_BATCH_SIZE,
+        saveTermsCallback
+      );
       this.isTranslating = true;
 
       // Start translation

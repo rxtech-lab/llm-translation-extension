@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@src/components/ui/button";
 import {
   Card,
@@ -9,6 +9,7 @@ import {
 } from "@src/components/ui/card";
 import { Progress } from "@src/components/ui/progress";
 import { Badge } from "@src/components/ui/badge";
+import { MoreVertical } from "lucide-react";
 import "@pages/content/style.css";
 
 interface TokenUsage {
@@ -31,11 +32,32 @@ export default function Popup() {
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+
+    if (showDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showDropdown]);
 
   const loadSettings = async () => {
     try {
@@ -137,6 +159,20 @@ export default function Popup() {
     });
   };
 
+  const toggleDropdown = () => {
+    setShowDropdown(!showDropdown);
+  };
+
+  const handleSettingsClick = () => {
+    setShowDropdown(false);
+    openSettings();
+  };
+
+  const handleTermsClick = () => {
+    setShowDropdown(false);
+    openTerms();
+  };
+
   if (loading) {
     return (
       <div className="w-96 h-[500px] bg-background p-4 flex items-center justify-center">
@@ -150,8 +186,42 @@ export default function Popup() {
       {/* Header */}
       <Card className="border-none shadow-none mb-2">
         <CardHeader className="pb-3">
-          <CardTitle className="text-xl">LLM Translation</CardTitle>
-          <CardDescription>AI-powered webpage translation</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-xl">LLM Translation</CardTitle>
+              <CardDescription>AI-powered webpage translation</CardDescription>
+            </div>
+            <div className="relative" ref={dropdownRef}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleDropdown}
+                className="h-8 w-8 p-0 rounded-full"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+              {showDropdown && (
+                <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                  <div className="py-1">
+                    <button
+                      onClick={handleSettingsClick}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                    >
+                      Settings
+                    </button>
+                    <button
+                      onClick={handleTermsClick}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                    >
+                      Terms
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </CardHeader>
       </Card>
 
@@ -246,22 +316,28 @@ export default function Popup() {
                     <div className="text-xs space-y-1">
                       <div className="flex justify-between">
                         <span>Input:</span>
-                        <span className="font-mono">{progress.usage.promptTokens.toLocaleString()}</span>
+                        <span className="font-mono">
+                          {progress.usage.promptTokens.toLocaleString()}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Output:</span>
-                        <span className="font-mono">{progress.usage.completionTokens.toLocaleString()}</span>
+                        <span className="font-mono">
+                          {progress.usage.completionTokens.toLocaleString()}
+                        </span>
                       </div>
                       <div className="flex justify-between font-semibold">
                         <span>Total:</span>
-                        <span className="font-mono">{progress.usage.totalTokens.toLocaleString()}</span>
+                        <span className="font-mono">
+                          {progress.usage.totalTokens.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
                 )}
-                
+
                 {/* Debug: Show raw progress object */}
-                {process.env.NODE_ENV === 'development' && (
+                {process.env.NODE_ENV === "development" && (
                   <div className="text-xs text-muted-foreground">
                     <pre>{JSON.stringify(progress, null, 2)}</pre>
                   </div>
@@ -288,28 +364,6 @@ export default function Popup() {
             ) : null}
           </div>
         )}
-      </div>
-
-      {/* Footer */}
-      <div className="border-t p-3 bg-muted/30">
-        <div className="flex space-x-2">
-          <Button
-            onClick={openSettings}
-            variant="outline"
-            size="sm"
-            className="flex-1"
-          >
-            Settings
-          </Button>
-          <Button
-            onClick={openTerms}
-            variant="outline"
-            size="sm"
-            className="flex-1"
-          >
-            Terms
-          </Button>
-        </div>
       </div>
     </div>
   );
