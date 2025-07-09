@@ -30,6 +30,7 @@ interface TranslationProgress {
 export default function Popup() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -81,6 +82,7 @@ export default function Popup() {
     }
 
     setIsTranslating(true);
+    setIsCompleted(false);
     setProgress({ current: 0, total: 0 });
 
     try {
@@ -103,9 +105,11 @@ export default function Popup() {
           setProgress(message.progress);
         } else if (message.action === "translationComplete") {
           setIsTranslating(false);
-          setProgress(null);
+          setIsCompleted(true);
+          // Keep the progress state to show completion
         } else if (message.action === "translationError") {
           setIsTranslating(false);
+          setIsCompleted(false);
           setProgress({ current: 0, total: 0, error: message.error });
         }
       };
@@ -133,6 +137,7 @@ export default function Popup() {
       chrome.tabs.sendMessage(tab.id, { action: "stopTranslation" });
     }
     setIsTranslating(false);
+    setIsCompleted(false);
     setProgress(null);
   };
 
@@ -246,7 +251,7 @@ export default function Popup() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {!isTranslating && !progress ? (
+            {!isTranslating && !progress && !isCompleted ? (
               <div className="space-y-3">
                 <Button
                   onClick={startTranslation}
@@ -267,9 +272,11 @@ export default function Popup() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-semibold">
-                    Translation Progress
+                    {isCompleted
+                      ? "Translation Complete"
+                      : "Translation Progress"}
                   </h3>
-                  <Badge variant="secondary">
+                  <Badge variant={isCompleted ? "default" : "secondary"}>
                     {progress.current}/{progress.total}
                   </Badge>
                 </div>
@@ -351,7 +358,7 @@ export default function Popup() {
                   </div>
                 )}
 
-                {isTranslating && (
+                {isTranslating ? (
                   <Button
                     onClick={stopTranslation}
                     variant="destructive"
@@ -359,7 +366,24 @@ export default function Popup() {
                   >
                     Stop Translation
                   </Button>
-                )}
+                ) : isCompleted ? (
+                  <div className="space-y-2">
+                    <Button
+                      onClick={startTranslation}
+                      className="w-full"
+                      variant="default"
+                    >
+                      Start New Translation
+                    </Button>
+                    <Button
+                      onClick={restoreOriginal}
+                      variant="secondary"
+                      className="w-full"
+                    >
+                      Restore Original
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

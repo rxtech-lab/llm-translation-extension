@@ -124,22 +124,17 @@ export class PageTranslator {
             this.totalUsage.totalTokens += result.usage.totalTokens;
           }
 
-          // Store the base translated text before terms replacement
+          // Store the base translated text without terms replacement
           this.translatedNodes.set(node, result.translatedText);
 
-          // Apply terms replacement to the translated text before updating
-          const finalTranslatedText = this.applyTermsReplacement(
-            result.translatedText
-          );
-
-          // Safely update the text node
-          this.updateTextNode(node, finalTranslatedText);
+          // Update the text node with base translated text (without terms replacement)
+          this.updateTextNode(node, result.translatedText);
 
           return {
             success: true,
             node,
             currentText,
-            translatedText: finalTranslatedText,
+            translatedText: result.translatedText,
             globalIndex,
             error: undefined,
             usage: result.usage || {
@@ -192,15 +187,10 @@ export class PageTranslator {
       }
     }
 
-    // Translate any remaining terms
-    yield {
-      current: textNodes.length,
-      total: textNodes.length + 1,
-      currentText: "Translating remaining terms...",
-      usage: this.totalUsage,
-    };
-
     await this.translateAllTerms(signal, timeout);
+
+    // Apply term replacement to all translated nodes at the end
+    this.applyTermsReplacementToAllNodes();
 
     const finalHtml = this.renderFinalTemplate(rootElement.outerHTML);
 
@@ -351,9 +341,9 @@ export class PageTranslator {
   }
 
   private renderFinalTemplate(html: string): string {
-    // Apply final term replacements to the entire HTML
-    // This ensures terms are replaced even in HTML attributes and structure
-    return this.applyTermsReplacement(html);
+    // Terms have already been applied to all translated nodes
+    // Just return the HTML as-is since DOM nodes are already updated
+    return html;
   }
 
   private escapeRegExp(string: string): string {
@@ -460,8 +450,8 @@ export class PageTranslator {
     }
   }
 
-  private updateAllTranslatedNodesWithNewTerms(): void {
-    // Create a copy of the entries since we might be modifying the map during iteration
+  private applyTermsReplacementToAllNodes(): void {
+    // Apply term replacement to all translated nodes at once
     const entries = Array.from(this.translatedNodes.entries());
 
     entries.forEach(([node, baseTranslatedText]) => {
@@ -471,6 +461,11 @@ export class PageTranslator {
         this.updateTextNode(node, updatedText);
       }
     });
+  }
+
+  private updateAllTranslatedNodesWithNewTerms(): void {
+    // This method is now an alias for applyTermsReplacementToAllNodes
+    this.applyTermsReplacementToAllNodes();
   }
 
   private async translateNewTerms(
