@@ -206,6 +206,9 @@ export class PageTranslator {
       const parent = node.parentNode;
       const parentElement = node.parentElement;
 
+      // Store original text in data attribute before replacing
+      const originalText = this.originalTextMap.get(node) || node.nodeValue || "";
+      
       // Check if the translated text contains HTML (spans with tooltips)
       if (translatedText.includes('<span class="translated-term"')) {
         // Create a temporary element to parse the HTML
@@ -227,9 +230,10 @@ export class PageTranslator {
         node.nodeValue = translatedText;
       }
 
-      // Mark parent element as translated
+      // Mark parent element as translated and store original text
       if (parentElement) {
         parentElement.setAttribute("data-translation", "true");
+        parentElement.setAttribute("data-original-text", originalText);
       }
     }
   }
@@ -360,9 +364,24 @@ export class PageTranslator {
   }
 
   public restoreOriginalText(): void {
+    // Method 1: Restore using originalTextMap (for text nodes still in DOM)
     this.originalTextMap.forEach((originalText, node) => {
       if (node.parentNode) {
         node.nodeValue = originalText;
+      }
+    });
+
+    // Method 2: Restore using data attributes (for elements that may have been replaced)
+    const translatedElements = document.querySelectorAll('[data-translation="true"]');
+    translatedElements.forEach((element) => {
+      const originalText = element.getAttribute('data-original-text');
+      if (originalText) {
+        // Replace the element's content with the original text
+        element.textContent = originalText;
+        
+        // Remove translation markers
+        element.removeAttribute('data-translation');
+        element.removeAttribute('data-original-text');
       }
     });
   }
