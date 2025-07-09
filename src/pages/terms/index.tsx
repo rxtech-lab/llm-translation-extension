@@ -1,4 +1,4 @@
-import "@pages/options/index.css";
+import "@pages/content/style.css";
 import { createRoot } from "react-dom/client";
 import Terms from "./Terms";
 
