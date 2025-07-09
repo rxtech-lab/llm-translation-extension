@@ -26,29 +26,40 @@ import {
   SelectValue,
 } from "@src/components/ui/select";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Check, Plus, Trash2, ChevronsUpDown } from "lucide-react";
 import React, { useEffect, useId, useMemo, useState } from "react";
+import { Combobox, ComboboxInput } from "@headlessui/react";
 import { Category, Terms as TermsType } from "../../translator/llm/translator";
+import { toast, Toaster } from "sonner";
 
 interface TermsPageState {
   categories: Category[];
   searchQuery: string;
   selectedCategory: string;
+  selectedDomain: string;
+  domains: string[];
   editingTerm: TermsType | null;
   originalEditingTerm: (TermsType & { categoryName: string }) | null;
   newTerm: Partial<TermsType>;
   loading: boolean;
   isDialogOpen: boolean;
+  newDomainForTerm: string;
+  isClearAllDialogOpen: boolean;
 }
 
 const initialState: TermsPageState = {
   categories: [],
   searchQuery: "",
   selectedCategory: "all",
+  selectedDomain: "all",
+  domains: [],
   editingTerm: null,
   originalEditingTerm: null,
   newTerm: { original: "", translated: "", description: "", template: "" },
   loading: true,
   isDialogOpen: false,
+  newDomainForTerm: "",
+  isClearAllDialogOpen: false,
 };
 
 export default function Terms() {
@@ -60,47 +71,115 @@ export default function Terms() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    loadTerms();
+    loadDomainsAndTerms();
   }, []);
 
-  const loadTerms = async () => {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  useEffect(() => {
+    if (state.selectedDomain && state.selectedDomain !== "all") {
+      loadTermsForDomain(state.selectedDomain);
+    }
+  }, [state.selectedDomain]);
+
+  const loadDomainsAndTerms = async () => {
     try {
-      const result = await chrome.storage.local.get(["translationTerms"]);
-      if (result.translationTerms) {
-        setState((prev) => ({ ...prev, categories: result.translationTerms }));
+      // Load all domains
+      const response = await chrome.runtime.sendMessage({
+        action: "getDomains",
+      });
+
+      if (response.success) {
+        const domains = response.domains || [];
+        setState((prev) => ({ ...prev, domains }));
+
+        // Load terms for all domains if no specific domain is selected
+        if (domains.length > 0) {
+          await loadAllTerms(domains);
+        }
       }
     } catch (error) {
-      console.error("Failed to load terms:", error);
+      console.error("Failed to load domains:", error);
     } finally {
       setState((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  const saveTerms = async (categories?: Category[]) => {
-    const categoriesToSave = categories || state.categories;
+  const loadAllTerms = async (domains: string[]) => {
     try {
-      await chrome.storage.local.set({ translationTerms: categoriesToSave });
+      const allCategories: Category[] = [];
 
-      // Notify all tabs about updated terms
-      try {
-        const tabs = await chrome.tabs.query({});
-        tabs.forEach((tab) => {
-          if (tab.id) {
-            chrome.tabs
-              .sendMessage(tab.id, {
-                action: "termsUpdated",
-                terms: categoriesToSave,
-              })
-              .catch(() => {
-                // Ignore errors for tabs without content script
-              });
-          }
+      for (const domain of domains) {
+        const response = await chrome.runtime.sendMessage({
+          action: "getTerms",
+          domain,
         });
-      } catch (error) {
-        console.error("Failed to notify tabs about terms update:", error);
+
+        if (response.success && response.terms) {
+          // Add domain prefix to category names to avoid conflicts
+          const domainCategories = response.terms.map((cat: Category) => ({
+            ...cat,
+            name: cat.name.startsWith(`${domain} - `)
+              ? cat.name
+              : `${domain} - ${cat.name}`,
+          }));
+          allCategories.push(...domainCategories);
+        }
+      }
+
+      setState((prev) => ({ ...prev, categories: allCategories }));
+    } catch (error) {
+      console.error("Failed to load all terms:", error);
+    }
+  };
+
+  const loadTermsForDomain = async (domain: string) => {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "getTerms",
+        domain,
+      });
+
+      if (response.success) {
+        setState((prev) => ({ ...prev, categories: response.terms || [] }));
       }
     } catch (error) {
+      console.error("Failed to load terms for domain:", error);
+    }
+  };
+
+  const saveTerms = async (categories?: Category[]) => {
+    const categoriesToSave = categories || state.categories;
+    const domain =
+      state.selectedDomain === "all" ? "general" : state.selectedDomain;
+
+    try {
+      await chrome.runtime.sendMessage({
+        action: "saveTerms",
+        terms: categoriesToSave,
+        domain,
+      });
+    } catch (error) {
       console.error("Failed to save terms:", error);
+    }
+  };
+
+  const saveTermsForDomain = async (categories: Category[], domain: string) => {
+    try {
+      await chrome.runtime.sendMessage({
+        action: "saveTerms",
+        terms: categories,
+        domain,
+      });
+
+      // Update domains list if it's a new domain
+      if (!state.domains.includes(domain)) {
+        setState((prev) => ({
+          ...prev,
+          domains: [...prev.domains, domain],
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to save terms for domain:", error);
     }
   };
 
@@ -137,37 +216,84 @@ export default function Terms() {
     overscan: 5,
   });
 
-  const addNewTerm = () => {
+  const addNewTerm = async () => {
     if (!state.newTerm.original || !state.newTerm.translated) return;
+    if (!state.newDomainForTerm) {
+      console.log("Showing toast error");
+      toast.error("Please select a domain to add terms");
+      return;
+    }
 
     const categoryName =
       state.selectedCategory === "all" ? "General" : state.selectedCategory;
 
-    setState((prev) => {
-      const categories = [...prev.categories];
-      let category = categories.find((cat) => cat.name === categoryName);
-
-      if (!category) {
-        category = { name: categoryName, terms: [] };
-        categories.push(category);
-      }
-
-      category.terms.push({
-        original: prev.newTerm.original!,
-        translated: prev.newTerm.translated!,
-        description: prev.newTerm.description || "",
-        template: prev.newTerm.template || "",
+    try {
+      // Load existing categories for the target domain
+      const response = await chrome.runtime.sendMessage({
+        action: "getTerms",
+        domain: state.newDomainForTerm,
       });
 
-      // Save the updated categories immediately
-      saveTerms(categories);
+      let targetCategories: Category[] = [];
+      if (response.success && response.terms) {
+        targetCategories = [...response.terms];
+      }
 
-      return {
+      // Find or create the category in the target domain
+      let category = targetCategories.find((cat) => cat.name === categoryName);
+      if (!category) {
+        category = { name: categoryName, terms: [] };
+        targetCategories.push(category);
+      }
+
+      // Add the new term to the target domain's category
+      category.terms.push({
+        original: state.newTerm.original!,
+        translated: state.newTerm.translated!,
+        description: state.newTerm.description || "",
+        template: state.newTerm.template || "",
+      });
+
+      // Save the updated categories to the target domain
+      await saveTermsForDomain(targetCategories, state.newDomainForTerm);
+
+      // Update UI state
+      setState((prev) => ({
         ...prev,
-        categories,
         newTerm: { original: "", translated: "", description: "" },
-      };
-    });
+        newDomainForTerm: "",
+      }));
+
+      // Refresh the current view if we're viewing the same domain or if "All Domains" is selected
+      if (
+        state.selectedDomain === state.newDomainForTerm ||
+        state.selectedDomain === "all"
+      ) {
+        if (state.selectedDomain === "all") {
+          // When "All Domains" is selected, reload all terms to include the new domain
+          const updatedDomains = state.domains.includes(state.newDomainForTerm)
+            ? state.domains
+            : [...state.domains, state.newDomainForTerm];
+          await loadAllTerms(updatedDomains);
+        } else {
+          // When specific domain is selected, just update the categories
+          setState((prev) => ({
+            ...prev,
+            categories: targetCategories,
+          }));
+        }
+      }
+
+      // Show success message
+      console.log("Showing toast success");
+      toast.success(
+        `Term "${state.newTerm.original}" successfully added to domain "${state.newDomainForTerm}"`
+      );
+    } catch (error) {
+      console.error("Failed to add new term:", error);
+      console.log("Showing toast error");
+      toast.error("Failed to add new term. Please try again.");
+    }
   };
 
   const editTerm = (term: TermsType & { categoryName: string }) => {
@@ -179,40 +305,96 @@ export default function Terms() {
     }));
   };
 
-  const updateTerm = () => {
+  const updateTerm = async () => {
     if (!state.editingTerm || !state.originalEditingTerm) return;
 
-    setState((prev) => {
-      const categories = prev.categories.map((cat) => {
-        if (cat.name === prev.originalEditingTerm!.categoryName) {
-          return {
-            ...cat,
-            terms: cat.terms.map((term) =>
-              term.original === prev.originalEditingTerm!.original
-                ? ({
-                    original: state.editingTerm!.original,
-                    translated: state.editingTerm!.translated,
-                    description: state.editingTerm!.description,
-                    template: state.editingTerm!.template,
-                  } as TermsType)
-                : term
-            ),
-          };
+    if (state.selectedDomain === "all") {
+      // When "All Domains" is selected, extract the domain from the category name
+      const domainMatch =
+        state.originalEditingTerm.categoryName.match(/^(.+?) - (.+)$/);
+      if (domainMatch) {
+        const [, domain, originalCategoryName] = domainMatch;
+
+        // Load current terms for this domain
+        const response = await chrome.runtime.sendMessage({
+          action: "getTerms",
+          domain,
+        });
+
+        if (response.success && response.terms) {
+          // Update the term in the appropriate category
+          const updatedCategories = response.terms.map((cat: Category) => {
+            if (cat.name === originalCategoryName) {
+              return {
+                ...cat,
+                terms: cat.terms.map((term: TermsType) =>
+                  term.original === state.originalEditingTerm!.original
+                    ? ({
+                        original: state.editingTerm!.original,
+                        translated: state.editingTerm!.translated,
+                        description: state.editingTerm!.description,
+                        template: state.editingTerm!.template,
+                      } as TermsType)
+                    : term
+                ),
+              };
+            }
+            return cat;
+          });
+
+          // Save to the specific domain
+          await chrome.runtime.sendMessage({
+            action: "saveTerms",
+            terms: updatedCategories,
+            domain,
+          });
+
+          // Reload all terms to refresh the UI
+          await loadAllTerms(state.domains);
         }
-        return cat;
+      }
+    } else {
+      // When a specific domain is selected, use the existing logic
+      setState((prev) => {
+        const categories = prev.categories.map((cat) => {
+          if (cat.name === prev.originalEditingTerm!.categoryName) {
+            return {
+              ...cat,
+              terms: cat.terms.map((term) =>
+                term.original === prev.originalEditingTerm!.original
+                  ? ({
+                      original: state.editingTerm!.original,
+                      translated: state.editingTerm!.translated,
+                      description: state.editingTerm!.description,
+                      template: state.editingTerm!.template,
+                    } as TermsType)
+                  : term
+              ),
+            };
+          }
+          return cat;
+        });
+
+        // Save the updated categories immediately
+        saveTerms(categories);
+
+        return {
+          ...prev,
+          categories,
+          editingTerm: null,
+          originalEditingTerm: null,
+          isDialogOpen: false,
+        };
       });
+    }
 
-      // Save the updated categories immediately
-      saveTerms(categories);
-
-      return {
-        ...prev,
-        categories,
-        editingTerm: null,
-        originalEditingTerm: null,
-        isDialogOpen: false,
-      };
-    });
+    // Clear editing state
+    setState((prev) => ({
+      ...prev,
+      editingTerm: null,
+      originalEditingTerm: null,
+      isDialogOpen: false,
+    }));
   };
 
   const cancelEdit = () => {
@@ -224,27 +406,136 @@ export default function Terms() {
     }));
   };
 
-  const deleteTerm = (termToDelete: TermsType & { categoryName: string }) => {
-    setState((prev) => {
-      const categories = prev.categories
-        .map((cat) => {
-          if (cat.name === termToDelete.categoryName) {
-            return {
-              ...cat,
-              terms: cat.terms.filter(
-                (term) => term.original !== termToDelete.original
-              ),
-            };
+  const deleteTerm = async (
+    termToDelete: TermsType & { categoryName: string }
+  ) => {
+    try {
+      if (state.selectedDomain === "all") {
+        // When "All Domains" is selected, extract the domain from the category name
+        const domainMatch = termToDelete.categoryName.match(/^(.+?) - (.+)$/);
+        if (domainMatch) {
+          const [, domain, originalCategoryName] = domainMatch;
+
+          // Load current terms for this domain
+          const response = await chrome.runtime.sendMessage({
+            action: "getTerms",
+            domain,
+          });
+
+          if (response.success && response.terms) {
+            // Remove the term from the appropriate category
+            const updatedCategories = response.terms
+              .map((cat: Category) => {
+                if (cat.name === originalCategoryName) {
+                  return {
+                    ...cat,
+                    terms: cat.terms.filter(
+                      (term: TermsType) =>
+                        term.original !== termToDelete.original
+                    ),
+                  };
+                }
+                return cat;
+              })
+              .filter((cat: Category) => cat.terms.length > 0);
+
+            // Save to the specific domain
+            await chrome.runtime.sendMessage({
+              action: "saveTerms",
+              terms: updatedCategories,
+              domain,
+            });
+
+            // Reload all terms to refresh the UI
+            await loadAllTerms(state.domains);
+
+            // Show success toast
+            toast.success(
+              `Term "${termToDelete.original}" deleted successfully`
+            );
+          } else {
+            toast.error("Failed to delete term. Please try again.");
           }
-          return cat;
-        })
-        .filter((cat) => cat.terms.length > 0);
+        }
+      } else {
+        // When a specific domain is selected, use the existing logic
+        setState((prev) => {
+          const categories = prev.categories
+            .map((cat) => {
+              if (cat.name === termToDelete.categoryName) {
+                return {
+                  ...cat,
+                  terms: cat.terms.filter(
+                    (term) => term.original !== termToDelete.original
+                  ),
+                };
+              }
+              return cat;
+            })
+            .filter((cat) => cat.terms.length > 0);
 
-      // Save the updated categories immediately
-      saveTerms(categories);
+          // Save the updated categories immediately
+          saveTerms(categories);
 
-      return { ...prev, categories };
-    });
+          return { ...prev, categories };
+        });
+
+        // Show success toast
+        toast.success(`Term "${termToDelete.original}" deleted successfully`);
+      }
+    } catch (error) {
+      console.error("Failed to delete term:", error);
+      toast.error("Failed to delete term. Please try again.");
+    }
+  };
+
+  const clearAllTerms = async () => {
+    try {
+      if (state.selectedDomain === "all") {
+        // Clear all terms for all domains
+        for (const domain of state.domains) {
+          await chrome.runtime.sendMessage({
+            action: "saveTerms",
+            terms: [],
+            domain,
+          });
+        }
+
+        // Reload all terms to ensure consistency
+        await loadAllTerms(state.domains);
+
+        toast.success("All terms cleared for all domains");
+      } else {
+        // Clear all categories for the selected domain
+        await chrome.runtime.sendMessage({
+          action: "saveTerms",
+          terms: [],
+          domain: state.selectedDomain,
+        });
+
+        // Reload terms for the current domain to ensure consistency
+        await loadTermsForDomain(state.selectedDomain);
+
+        toast.success(`All terms cleared for domain "${state.selectedDomain}"`);
+      }
+
+      // Close the dialog
+      setState((prev) => ({
+        ...prev,
+        isClearAllDialogOpen: false,
+      }));
+    } catch (error) {
+      console.error("Failed to clear all terms:", error);
+      toast.error("Failed to clear all terms. Please try again.");
+    }
+  };
+
+  const openClearAllDialog = () => {
+    setState((prev) => ({ ...prev, isClearAllDialogOpen: true }));
+  };
+
+  const closeClearAllDialog = () => {
+    setState((prev) => ({ ...prev, isClearAllDialogOpen: false }));
   };
 
   const categoryOptions = useMemo(() => {
@@ -302,6 +593,30 @@ export default function Terms() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="domain">Filter by Domain</Label>
+                    <Select
+                      value={state.selectedDomain}
+                      onValueChange={(value) =>
+                        setState((prev) => ({
+                          ...prev,
+                          selectedDomain: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select domain" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Domains</SelectItem>
+                        {state.domains.map((domain) => (
+                          <SelectItem key={domain} value={domain}>
+                            {domain}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="category">Filter by Category</Label>
                     <Select
                       value={state.selectedCategory}
@@ -338,6 +653,112 @@ export default function Terms() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="domain">Domain</Label>
+                    <Combobox
+                      value={state.newDomainForTerm}
+                      onChange={(value: string) =>
+                        setState((prev) => ({
+                          ...prev,
+                          newDomainForTerm: value,
+                        }))
+                      }
+                    >
+                      <div className="relative">
+                        <ComboboxInput
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          displayValue={(domain: string) => domain}
+                          onChange={(event) =>
+                            setState((prev) => ({
+                              ...prev,
+                              newDomainForTerm: event.target.value,
+                            }))
+                          }
+                          placeholder="Type domain name..."
+                        />
+                        <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
+                          <ChevronsUpDown className="h-4 w-4 text-gray-400" />
+                        </Combobox.Button>
+                        <Combobox.Options className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+                          {state.domains
+                            .filter((domain) => {
+                              if (!state.newDomainForTerm) return true;
+                              return domain
+                                .toLowerCase()
+                                .includes(state.newDomainForTerm.toLowerCase());
+                            })
+                            .map((domain) => (
+                              <Combobox.Option
+                                key={domain}
+                                value={domain}
+                                className={({ active }) =>
+                                  `relative cursor-default select-none py-2 pl-10 pr-4 ${
+                                    active
+                                      ? "bg-blue-600 text-white"
+                                      : "text-gray-900"
+                                  }`
+                                }
+                              >
+                                {({ selected, active }) => (
+                                  <>
+                                    <span
+                                      className={`block truncate ${
+                                        selected ? "font-medium" : "font-normal"
+                                      }`}
+                                    >
+                                      {domain}
+                                    </span>
+                                    {selected ? (
+                                      <span
+                                        className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
+                                          active
+                                            ? "text-white"
+                                            : "text-blue-600"
+                                        }`}
+                                      >
+                                        <Check className="h-4 w-4" />
+                                      </span>
+                                    ) : null}
+                                  </>
+                                )}
+                              </Combobox.Option>
+                            ))}
+                          {state.newDomainForTerm &&
+                            !state.domains.some(
+                              (d) =>
+                                d.toLowerCase() ===
+                                state.newDomainForTerm.toLowerCase()
+                            ) && (
+                              <Combobox.Option
+                                value={state.newDomainForTerm}
+                                className={({ active }) =>
+                                  `relative cursor-default select-none py-2 pl-10 pr-4 border-t ${
+                                    active
+                                      ? "bg-blue-600 text-white"
+                                      : "text-gray-900"
+                                  }`
+                                }
+                              >
+                                {({ active }) => (
+                                  <>
+                                    <span className="block truncate font-normal">
+                                      Add "{state.newDomainForTerm}"
+                                    </span>
+                                    <span
+                                      className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
+                                        active ? "text-white" : "text-blue-600"
+                                      }`}
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </span>
+                                  </>
+                                )}
+                              </Combobox.Option>
+                            )}
+                        </Combobox.Options>
+                      </div>
+                    </Combobox>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="original">Original Text</Label>
                     {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
@@ -394,13 +815,17 @@ export default function Terms() {
                   </div>
                 </div>
                 <Button
+                  data-testid="add-term-button"
                   onClick={addNewTerm}
                   disabled={
-                    !state.newTerm.original || !state.newTerm.translated
+                    !state.newTerm.original ||
+                    !state.newTerm.translated ||
+                    !state.newDomainForTerm
                   }
                   className="w-full"
                 >
-                  Add Term
+                  Add Term{" "}
+                  {!state.newDomainForTerm ? "(Select a domain first)" : ""}
                 </Button>
               </CardContent>
             </Card>
@@ -412,13 +837,32 @@ export default function Terms() {
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <CardTitle>Terms</CardTitle>
-                  <Badge variant="secondary">
-                    {filteredTerms.length} term
-                    {filteredTerms.length !== 1 ? "s" : ""}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">
+                      {filteredTerms.length} term
+                      {filteredTerms.length !== 1 ? "s" : ""}
+                    </Badge>
+                    {filteredTerms.length > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={openClearAllDialog}
+                        className="h-7 text-xs"
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Clear All
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <CardDescription>
                   Manage your translation vocabulary
+                  {state.selectedDomain !== "all" && (
+                    <span className="text-sm text-muted-foreground">
+                      {" "}
+                      for domain "{state.selectedDomain}"
+                    </span>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -600,7 +1044,49 @@ export default function Terms() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Clear All Terms Confirmation Dialog */}
+        <Dialog
+          open={state.isClearAllDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeClearAllDialog();
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Clear All Terms</DialogTitle>
+              <DialogDescription>
+                {state.selectedDomain === "all" ? (
+                  <>
+                    Are you sure you want to clear all terms for all domains?
+                    This action cannot be undone and will permanently delete all
+                    terms and categories across all domains.
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to clear all terms for domain "
+                    {state.selectedDomain}"? This action cannot be undone and
+                    will permanently delete all terms and categories for this
+                    domain.
+                  </>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeClearAllDialog}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={clearAllTerms}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Clear All Terms
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
+      <Toaster position="top-right" expand={false} richColors />
     </div>
   );
 }

@@ -65,11 +65,19 @@ async function handleGetSettings(sendResponse: (response: any) => void) {
 }
 
 async function handleSaveTerms(
-  terms: any[],
+  terms: any,
   sendResponse: (response: any) => void
 ) {
   try {
-    await chrome.storage.local.set({ translationTerms: terms });
+    // Support both old format (array) and new format (object with domains)
+    if (Array.isArray(terms)) {
+      // Convert old format to new format with "unknown" domain
+      const termsByDomain = { unknown: terms };
+      await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
+    } else {
+      // New format: object with domains
+      await chrome.storage.local.set({ translationTermsByDomain: terms });
+    }
 
     // Notify all content scripts about updated terms
     const tabs = await chrome.tabs.query({});
@@ -97,11 +105,28 @@ async function handleSaveTerms(
 
 async function handleGetTerms(sendResponse: (response: any) => void) {
   try {
-    const result = await chrome.storage.local.get(["translationTerms"]);
-    sendResponse({
-      success: true,
-      terms: result.translationTerms || [],
-    });
+    // Try new format first
+    const result = await chrome.storage.local.get(["translationTermsByDomain", "translationTerms"]);
+    
+    if (result.translationTermsByDomain) {
+      sendResponse({
+        success: true,
+        terms: result.translationTermsByDomain,
+      });
+    } else if (result.translationTerms) {
+      // Migrate old format to new format
+      const termsByDomain = { unknown: result.translationTerms };
+      await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
+      sendResponse({
+        success: true,
+        terms: termsByDomain,
+      });
+    } else {
+      sendResponse({
+        success: true,
+        terms: {},
+      });
+    }
   } catch (error) {
     sendResponse({
       success: false,

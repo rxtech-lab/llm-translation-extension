@@ -1,5 +1,6 @@
 import type { Category, Terms, TokenUsage, Translator } from "./llm/translator";
 import * as nunjucks from "nunjucks";
+import { extractDomain } from "../utils/domain";
 
 export interface TranslationProgress {
   current: number;
@@ -46,9 +47,24 @@ export class PageTranslator {
     private translator: Translator,
     private previousTerms: Category[] = [],
     private batchSize: number = PageTranslator.DEFAULT_BATCH_SIZE,
-    private onTermsUpdated?: (terms: Category[]) => Promise<void>
+    private onTermsUpdated?: (terms: Category[], domain?: string) => Promise<void>,
+    private domain?: string
   ) {
     this.currentTerms = this.previousTerms;
+  }
+
+  /**
+   * Filters terms by domain from a domain-based terms object
+   * @param termsByDomain - Object containing terms organized by domain
+   * @param currentDomain - The domain to filter by
+   * @returns Categories for the specified domain
+   */
+  public static filterTermsByDomain(
+    termsByDomain: { [domain: string]: Category[] },
+    currentDomain: string
+  ): Category[] {
+    const domain = extractDomain(currentDomain);
+    return termsByDomain[domain] || [];
   }
 
   public async *translate(
@@ -56,6 +72,9 @@ export class PageTranslator {
     signal?: AbortSignal,
     timeout?: number
   ): AsyncGenerator<TranslationProgress, TranslationResult> {
+    // Restore any previous translations before starting a new one using data attributes
+    this.restoreOriginalTextFromDataAttributes();
+    
     const textNodes = this.collectTextNodes(rootElement);
     const totalTexts = textNodes.map((node) => this.normalizeText(node));
 
@@ -293,7 +312,7 @@ export class PageTranslator {
     // Save terms to Chrome storage if new terms were added
     if (hasNewTerms && this.onTermsUpdated) {
       try {
-        await this.onTermsUpdated(this.currentTerms);
+        await this.onTermsUpdated(this.currentTerms, this.domain);
       } catch (error) {
         console.error("Failed to save terms to storage:", error);
       }
@@ -374,6 +393,10 @@ export class PageTranslator {
     });
 
     // Method 2: Restore using data attributes (for elements that may have been replaced)
+    this.restoreOriginalTextFromDataAttributes();
+  }
+
+  private restoreOriginalTextFromDataAttributes(): void {
     const translatedElements = document.querySelectorAll('[data-translation="true"]');
     translatedElements.forEach((element) => {
       const originalText = element.getAttribute('data-original-text');
@@ -400,7 +423,7 @@ export class PageTranslator {
       !parentElem || PageTranslator.SKIP_TAGS.has(parentElem.tagName);
     if (skippedByParentTag) return false;
 
-    // Skip elements that have already been translated
+    // Skip elements that have already been translated (but allow elements with data-translation="false")
     if (parentElem && parentElem.getAttribute("data-translation") === "true") {
       return false;
     }
@@ -441,8 +464,7 @@ export class PageTranslator {
 
     if (shadowDomElements.length) {
       return shadowDomElements
-        .map((elem) => this.collectTextNodes(elem.shadowRoot! as any))
-        .flat();
+        .flatMap((elem) => elem.shadowRoot ? this.collectTextNodes(elem.shadowRoot as unknown as HTMLElement) : []);
     }
     return [];
   }

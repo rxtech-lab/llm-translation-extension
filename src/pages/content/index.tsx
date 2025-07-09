@@ -2,6 +2,7 @@ import { PageTranslator } from "../../translator/pageTranslator";
 import { OpenAILLMTranslator } from "../../translator/llm/openaiTranslator";
 import { Category } from "../../translator/llm/translator";
 import { defaultTermsRenderer } from "../../translator/termsRenderer";
+import { extractDomain } from "../../utils/domain";
 import "./style.css";
 
 class TranslationContentScript {
@@ -56,9 +57,22 @@ class TranslationContentScript {
     }
 
     try {
-      // Load existing terms
-      const termsResult = await chrome.storage.local.get(["translationTerms"]);
-      const existingTerms: Category[] = termsResult.translationTerms || [];
+      // Get current domain
+      const currentDomain = extractDomain(window.location.href);
+      
+      // Load existing terms for this domain
+      const termsResult = await chrome.storage.local.get(["translationTermsByDomain", "translationTerms"]);
+      let existingTerms: Category[] = [];
+      
+      if (termsResult.translationTermsByDomain) {
+        existingTerms = PageTranslator.filterTermsByDomain(
+          termsResult.translationTermsByDomain,
+          currentDomain
+        );
+      } else if (termsResult.translationTerms) {
+        // Migrate old format to new format
+        existingTerms = termsResult.translationTerms || [];
+      }
 
       // Create translator
       const llmTranslator = new OpenAILLMTranslator(
@@ -71,11 +85,19 @@ class TranslationContentScript {
       );
 
       // Callback function to save terms to Chrome storage
-      const saveTermsCallback = async (terms: Category[]) => {
+      const saveTermsCallback = async (terms: Category[], domain?: string) => {
         try {
-          console.log("Saving terms", terms);
-          console.log("chrome.storage.local", chrome);
-          await chrome.storage.local.set({ translationTerms: terms });
+          console.log("Saving terms for domain:", domain || currentDomain, terms);
+          
+          // Get current domain-based terms
+          const result = await chrome.storage.local.get(["translationTermsByDomain"]);
+          const termsByDomain = result.translationTermsByDomain || {};
+          
+          // Update terms for the current domain
+          termsByDomain[domain || currentDomain] = terms;
+          
+          // Save updated terms
+          await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
 
           // Notify all tabs about updated terms
           const tabs = await chrome.tabs.query({});
@@ -84,7 +106,7 @@ class TranslationContentScript {
               chrome.tabs
                 .sendMessage(tab.id, {
                   action: "termsUpdated",
-                  terms,
+                  terms: termsByDomain,
                 })
                 .catch(() => {
                   // Ignore errors for tabs without content script
@@ -100,7 +122,8 @@ class TranslationContentScript {
         llmTranslator,
         existingTerms,
         PageTranslator.DEFAULT_BATCH_SIZE,
-        saveTermsCallback
+        saveTermsCallback,
+        currentDomain
       );
       this.isTranslating = true;
 
@@ -130,10 +153,16 @@ class TranslationContentScript {
         // Save updated terms
         //@ts-expect-error
         if (finalResult?.value?.terms) {
-          await chrome.storage.local.set({
-            //@ts-expect-error
-            translationTerms: finalResult.value.terms,
-          });
+          // Get current domain-based terms
+          const result = await chrome.storage.local.get(["translationTermsByDomain"]);
+          const termsByDomain = result.translationTermsByDomain || {};
+          
+          // Update terms for the current domain
+          //@ts-expect-error
+          termsByDomain[currentDomain] = finalResult.value.terms;
+          
+          // Save updated terms
+          await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
         }
 
         chrome.runtime.sendMessage({
@@ -178,11 +207,22 @@ class TranslationContentScript {
     }
   }
 
-  private handleTermsUpdated(terms: Category[]) {
+  private handleTermsUpdated(terms: { [domain: string]: Category[] } | Category[]) {
     console.log("Terms updated:", terms);
 
+    // Handle both old format (array) and new format (object)
+    let termsToUpdate: Category[] = [];
+    if (Array.isArray(terms)) {
+      // Old format - use as is
+      termsToUpdate = terms;
+    } else {
+      // New format - get terms for current domain
+      const currentDomain = extractDomain(window.location.href);
+      termsToUpdate = PageTranslator.filterTermsByDomain(terms, currentDomain);
+    }
+
     // Update terms renderer with new terms dictionary
-    defaultTermsRenderer.updateTermsDictionary(terms);
+    defaultTermsRenderer.updateTermsDictionary(termsToUpdate);
 
     // Process all translated elements and update their text nodes
     defaultTermsRenderer.processTranslatedElements();
