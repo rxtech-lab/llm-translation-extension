@@ -387,10 +387,15 @@ describe("html replacement", () => {
     for await (const result of translator.translate(element)) {
       results.push(result);
     }
-    expect(results.length).toBe(10);
+    expect(results.length).toBe(9);
     const finalTranslatedText = element.textContent?.trim();
     expect(finalTranslatedText).toContain(
       "在2025年7月4日至7月7日期间,发生了一场大规模且致命的事件这场事件发生在德克萨斯州特别是在在美国德克萨斯州"
+    );
+
+    translator.restoreOriginalText();
+    expect(element.textContent).toContain(
+      "From July 4 through July 7, 2025, a large and deadly flood event took place in the Texas Hill Country, particularly in Kerr County, in the U.S. state of Texas."
     );
   });
 });
