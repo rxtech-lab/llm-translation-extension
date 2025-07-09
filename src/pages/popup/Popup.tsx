@@ -188,47 +188,42 @@ export default function Popup() {
 
   return (
     <div className="w-full h-[500px] bg-background flex flex-col">
-      {/* Header */}
-      <Card className="border-none shadow-none mb-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-xl">LLM Translation</CardTitle>
-              <CardDescription>AI-powered webpage translation</CardDescription>
+      <div className="flex items-center justify-between px-4 pt-2">
+        <div>
+          <CardTitle className="text-xl">LLM Translation</CardTitle>
+          <CardDescription>AI-powered webpage translation</CardDescription>
+        </div>
+        <div className="relative" ref={dropdownRef}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleDropdown}
+            className="h-8 w-8 p-0 rounded-full"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+          {showDropdown && (
+            <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+              <div className="py-1">
+                <button
+                  onClick={handleSettingsClick}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                >
+                  Settings
+                </button>
+                <button
+                  onClick={handleTermsClick}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                >
+                  Terms
+                </button>
+              </div>
             </div>
-            <div className="relative" ref={dropdownRef}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleDropdown}
-                className="h-8 w-8 p-0 rounded-full"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-              {showDropdown && (
-                <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50">
-                  <div className="py-1">
-                    <button
-                      onClick={handleSettingsClick}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                    >
-                      Settings
-                    </button>
-                    <button
-                      onClick={handleTermsClick}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                    >
-                      Terms
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+          )}
+        </div>
+      </div>
 
       {/* Content */}
       <div className="flex-1 p-4 overflow-y-auto">

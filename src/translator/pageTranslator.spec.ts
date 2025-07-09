@@ -383,7 +383,7 @@ describe("html replacement", () => {
     <p>From July 4 through July 7, 2025, a large and deadly <a href="/wiki/Flood" title="Flood">flood</a> event took place in the <a href="/wiki/Texas_Hill_Country" title="Texas Hill Country">Texas Hill Country</a>, particularly in <a href="/wiki/Kerr_County" class="mw-redirect" title="Kerr County">Kerr County</a>, in the U.S. state of <a href="/wiki/Texas" title="Texas">Texas</a>.
     </p>`;
 
-    const results: TranslationProgress[] = [];
+    let results: TranslationProgress[] = [];
     for await (const result of translator.translate(element)) {
       results.push(result);
     }
@@ -396,6 +396,16 @@ describe("html replacement", () => {
     translator.restoreOriginalText();
     expect(element.textContent).toContain(
       "From July 4 through July 7, 2025, a large and deadly flood event took place in the Texas Hill Country, particularly in Kerr County, in the U.S. state of Texas."
+    );
+
+    // translate again
+    results = [];
+    for await (const result of translator.translate(element)) {
+      results.push(result);
+    }
+    expect(results.length).toBe(9);
+    expect(element.textContent).toContain(
+      "在2025年7月4日至7月7日期间,发生了一场大规模且致命的事件这场事件发生在德克萨斯州特别是在在美国德克萨斯州"
     );
   });
 });

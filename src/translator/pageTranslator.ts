@@ -366,8 +366,10 @@ export class PageTranslator {
   public restoreOriginalText(): void {
     // Method 1: Restore using originalTextMap (for text nodes still in DOM)
     this.originalTextMap.forEach((originalText, node) => {
-      if (node.parentNode) {
+      if (node.parentNode && node.parentElement) {
         node.nodeValue = originalText;
+        // Update data-translation attribute to false
+        node.parentElement.setAttribute('data-translation', 'false');
       }
     });
 
@@ -379,9 +381,9 @@ export class PageTranslator {
         // Replace the element's content with the original text
         element.textContent = originalText;
         
-        // Remove translation markers
-        element.removeAttribute('data-translation');
-        element.removeAttribute('data-original-text');
+        // Update data-translation attribute to false instead of removing it
+        element.setAttribute('data-translation', 'false');
+        // Keep the original text attribute for potential future use
       }
     });
   }
@@ -399,7 +401,7 @@ export class PageTranslator {
     if (skippedByParentTag) return false;
 
     // Skip elements that have already been translated
-    if (parentElem && parentElem.hasAttribute("data-translation")) {
+    if (parentElem && parentElem.getAttribute("data-translation") === "true") {
       return false;
     }
 
