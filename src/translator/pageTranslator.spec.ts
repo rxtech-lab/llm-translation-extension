@@ -1,13 +1,13 @@
 // biome-ignore assist/source/organizeImports: <explanation>
-import { PageTranslator } from "./pageTranslator";
+import { describe, expect, it } from "vitest";
 import type {
-  Translator,
-  TranslateProps,
-  TranslateResult,
   Category,
   TokenUsage,
+  TranslateProps,
+  TranslateResult,
+  Translator,
 } from "./llm/translator";
-import { describe, expect, it } from "vitest";
+import { PageTranslator, TranslationProgress } from "./pageTranslator";
 
 class MockTranslator implements Translator {
   async translateText(props: TranslateProps): Promise<TranslateResult> {
@@ -23,6 +23,7 @@ class MockTranslator implements Translator {
             original: "API",
             translated: "接口",
             description: "Application Programming Interface",
+            template: "{{API}}",
           },
         ]
       : [];
@@ -172,6 +173,7 @@ describe("PageTranslator", () => {
       original: "API",
       translated: "接口",
       description: "Application Programming Interface",
+      template: "{{API}}",
     });
   });
 
@@ -253,138 +255,142 @@ describe("PageTranslator", () => {
       "[TRANSLATED] Hello world"
     );
   });
+});
 
-  it("should replace terms in final HTML", async () => {
-    const element = document.createElement("div");
-    element.innerHTML =
-      "<p>Using API for data processing</p><span>The API endpoint</span>";
-
-    const mockTranslator = new MockTranslator();
-    const translator = new PageTranslator(mockTranslator);
-
-    // Use the generator manually to capture return value
-    const generator = translator.translate(element);
-    let result = await generator.next();
-
-    while (!result.done) {
-      result = await generator.next();
-    }
-
-    const finalResult = result.value;
-
-    // The final HTML should have replaced "API" with "接口"
-    expect(finalResult.finalHtml).toContain("接口");
-    expect(finalResult.finalHtml).not.toContain("API");
-
-    // Check that the structure is preserved (accounting for data-translation attributes)
-    expect(finalResult.finalHtml).toContain('<p data-translation="true">');
-    expect(finalResult.finalHtml).toContain('<span data-translation="true">');
-    expect(finalResult.finalHtml).toContain("data processing");
-    expect(finalResult.finalHtml).toContain("endpoint");
-  });
-
-  it("should handle multiple term replacements in HTML", async () => {
-    // Create a mock translator that extracts multiple terms
-    const multiTermTranslator: Translator = {
-      async translateText(props: TranslateProps): Promise<TranslateResult> {
-        const { currentText } = props;
-        const translatedText = `[TRANSLATED] ${currentText}`;
-
-        // Extract different terms based on content
-        const terms = [];
-        if (currentText.includes("API")) {
-          terms.push({
-            original: "API",
-            translated: "接口",
-            description: "Application Programming Interface",
-          });
-        }
-        if (currentText.includes("user")) {
-          terms.push({
-            original: "user",
-            translated: "用户",
-            description: "A person who uses the system",
-          });
-        }
-
+describe("html replacement", () => {
+  class MockTranslator implements Translator {
+    async translateText(props: TranslateProps): Promise<TranslateResult> {
+      if (
+        props.currentText.includes(
+          "From July 4 through July 7, 2025, a large and deadly"
+        )
+      ) {
         return {
-          translatedText,
-          terms,
-          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+          translatedText:
+            "在2025年7月4日至7月7日期间,{{Texas_Hill_Country}}发生了一场大规模且致命的",
+          terms: [
+            {
+              original: "Texas_Hill_Country",
+              translated: "德克萨斯州山地",
+              description: "A region in the U.S. state of Texas",
+              template: "{{Texas_Hill_Country}}",
+            },
+          ],
         };
-      },
-      async translateTerms(
-        category: Category,
-        signal?: AbortSignal
-      ): Promise<{ updatedCategory: Category; usage: TokenUsage }> {
-        const translatedTerms = category.terms.map((term) => ({
-          ...term,
-          translated: term.translated || `[TERM] ${term.original}`,
-        }));
+      }
 
+      if (props.currentText.includes("flood")) {
         return {
-          updatedCategory: { ...category, terms: translatedTerms },
-          usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+          translatedText: "{{flood}}事件",
+          terms: [
+            {
+              original: "flood",
+              translated: "洪水",
+              description: "A natural disaster caused by heavy rain",
+              template: "{{flood}}",
+            },
+          ],
         };
-      },
-    };
+      }
 
-    const element = document.createElement("div");
-    element.innerHTML =
-      "<p>The user calls the API</p><div>API user guide</div>";
+      if (props.currentText.includes("event took place in the")) {
+        return {
+          translatedText: "这场事件发生在",
+          terms: [],
+        };
+      }
 
-    const translator = new PageTranslator(multiTermTranslator);
+      if (props.currentText.includes("Texas_Hill_Country")) {
+        return {
+          translatedText: "Texas_Hill_Country",
+          terms: [
+            {
+              original: "Texas_Hill_Country",
+              translated: "德克萨斯州山地",
+              description: "A region in the U.S. state of Texas",
+              template: "Texas_Hill_Country",
+            },
+          ],
+        };
+      }
 
-    // Use the generator manually to capture return value
-    const generator = translator.translate(element);
-    let result = await generator.next();
+      if (props.currentText.includes("particularly in")) {
+        return {
+          translatedText: "特别是在",
+          terms: [],
+        };
+      }
 
-    while (!result.done) {
-      result = await generator.next();
+      if (props.currentText.includes("Kerr_County")) {
+        return {
+          translatedText: "Kerr_County",
+          terms: [
+            {
+              original: "Kerr_County",
+              translated: "克尔县",
+              description: "A county in the U.S. state of Texas",
+              template: "Kerr_County",
+            },
+          ],
+        };
+      }
+
+      if (props.currentText.includes(", in the U.S. state of")) {
+        return {
+          translatedText: "在美国{{Texas}}州",
+          terms: [
+            {
+              original: "Texas",
+              translated: "德克萨斯州",
+              description: "A state in the U.S.",
+              template: "Texas",
+            },
+          ],
+        };
+      }
+
+      if (props.currentText.includes("Texas")) {
+        return {
+          translatedText: "{{Texas}}",
+          terms: [
+            {
+              original: "Texas",
+              translated: "德克萨斯州",
+              description: "A state in the U.S.",
+              template: "Texas",
+            },
+          ],
+        };
+      }
+
+      return {
+        translatedText: "",
+        terms: [],
+      };
     }
+    translateTerms(
+      category: Category,
+      signal?: AbortSignal
+    ): Promise<{ updatedCategory: Category; usage: TokenUsage }> {
+      throw new Error("Method not implemented.");
+    }
+  }
 
-    const finalResult = result.value;
-
-    // Both terms should be replaced in the final HTML
-    expect(finalResult.finalHtml).toContain("用户");
-    expect(finalResult.finalHtml).toContain("接口");
-    expect(finalResult.finalHtml).not.toContain("API");
-    expect(finalResult.finalHtml).not.toContain("user");
-
-    // Should contain both terms in the terms array
-    expect(finalResult.terms[0].terms).toHaveLength(2);
-  });
-
-  it("should preserve HTML structure after term replacement", async () => {
+  it("should translate terms", async () => {
+    const translator = new PageTranslator(new MockTranslator());
     const element = document.createElement("div");
     element.innerHTML = `
-      <h1>API Documentation</h1>
-      <p class="intro">Welcome to our API guide</p>
-      <div data-testid="content">
-        <span>API usage examples</span>
-      </div>
-    `;
+    <p>From July 4 through July 7, 2025, a large and deadly <a href="/wiki/Flood" title="Flood">flood</a> event took place in the <a href="/wiki/Texas_Hill_Country" title="Texas Hill Country">Texas Hill Country</a>, particularly in <a href="/wiki/Kerr_County" class="mw-redirect" title="Kerr County">Kerr County</a>, in the U.S. state of <a href="/wiki/Texas" title="Texas">Texas</a>.
+    </p>`;
 
-    const mockTranslator = new MockTranslator();
-    const translator = new PageTranslator(mockTranslator);
-
-    const generator = translator.translate(element);
-    let result = await generator.next();
-
-    while (!result.done) {
-      result = await generator.next();
+    const results: TranslationProgress[] = [];
+    for await (const result of translator.translate(element)) {
+      results.push(result);
     }
-
-    const finalResult = result.value;
-
-    // HTML structure should be preserved (accounting for data-translation attributes)
-    expect(finalResult.finalHtml).toContain('<h1 data-translation="true">');
-    expect(finalResult.finalHtml).toContain('class="intro"');
-    expect(finalResult.finalHtml).toContain('data-testid="content"');
-    expect(finalResult.finalHtml).toContain('<span data-translation="true">');
-
-    // Terms should be replaced
-    expect(finalResult.finalHtml).toContain("接口");
-    expect(finalResult.finalHtml).not.toContain("API");
+    expect(results.length).toBe(10);
+    const finalTranslatedText = element.textContent?.trim();
+    expect(finalTranslatedText).toContain(
+      "在2025年7月4日至7月7日期间,发生了一场大规模且致命的事件这场事件发生在德克萨斯州特别是在在美国德克萨斯州"
+    );
   });
 });

@@ -2,6 +2,7 @@ export interface Terms {
   original: string;
   translated: string;
   description: string;
+  template: string;
 }
 
 export interface Category {

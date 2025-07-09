@@ -20,6 +20,11 @@ const TranslateTextSchema = z.object({
   newTerms: z.array(
     z.object({
       original: z.string(),
+      template: z
+        .string()
+        .describe(
+          "The jinja2 template of the term. Should be connected with underline that matches the translated text. For example, if the translated text is 'Texas Hill Country', the template should be '{{Texas_Hill_Country}}'."
+        ),
       translated: z.string(),
       description: z.string(),
     })
@@ -89,6 +94,7 @@ Instructions:
 5.  Return ONLY the translated text in \`translatedText\`, without any extra explanations or quotes.
 6.  Once you faced a new term, replace it with {{term_name}} using the jinja2 syntax and put the term in the newTerms array. This term_name can be anything that describe the term. Use existing terms if you think it's relevant.
 7.  Special terms could be: person, company, product, service, etc. Please replace them all with {{term_name}}.
+8.  Special terms should be connected with underline. For example, "Texas Hill Country" should be "Texas_Hill_Country".
 `;
 
     const result = await generateText({

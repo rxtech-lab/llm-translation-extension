@@ -46,7 +46,7 @@ const initialState: TermsPageState = {
   selectedCategory: "all",
   editingTerm: null,
   originalEditingTerm: null,
-  newTerm: { original: "", translated: "", description: "" },
+  newTerm: { original: "", translated: "", description: "", template: "" },
   loading: true,
   isDialogOpen: false,
 };
@@ -156,6 +156,7 @@ export default function Terms() {
         original: prev.newTerm.original!,
         translated: prev.newTerm.translated!,
         description: prev.newTerm.description || "",
+        template: prev.newTerm.template || "",
       });
 
       // Save the updated categories immediately
@@ -188,11 +189,12 @@ export default function Terms() {
             ...cat,
             terms: cat.terms.map((term) =>
               term.original === prev.originalEditingTerm!.original
-                ? {
+                ? ({
                     original: state.editingTerm!.original,
                     translated: state.editingTerm!.translated,
                     description: state.editingTerm!.description,
-                  }
+                    template: state.editingTerm!.template,
+                  } as TermsType)
                 : term
             ),
           };
@@ -450,7 +452,10 @@ export default function Terms() {
                           <div className="flex justify-between items-start">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <div className="font-medium text-gray-900 truncate">
+                                <div
+                                  className="font-medium text-gray-900 truncate"
+                                  title={term.template}
+                                >
                                   {term.original}
                                 </div>
                                 <div className="text-gray-600">→</div>
