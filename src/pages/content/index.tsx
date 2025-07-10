@@ -174,7 +174,7 @@ class TranslationContentScript {
 
   private handleRestoreOriginal() {
     if (this.translator) {
-      this.translator.restoreOriginalText();
+      this.translator.restoreOriginalText(document.body);
       chrome.runtime.sendMessage({
         action: "textRestored",
       });

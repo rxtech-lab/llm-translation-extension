@@ -206,13 +206,32 @@ export class PageTranslator {
     };
   }
 
-  private updateTextNode(node: Text, translatedText: string): void {
+  /**
+   * Update the text node with the translated text
+   * @param node - The text node to update
+   * @param translatedText - The translated text
+   * @param isTranslated - Whether the node is already translated. If true, the node will not be marked as translated and the original text will not be stored in data attributes
+   */
+  private updateTextNode(
+    node: Text,
+    translatedText: string,
+    isTranslated: boolean = false
+  ): void {
     if (node.parentNode && node.nodeValue !== translatedText) {
       const parent = node.parentNode;
       const parentElement = node.parentElement;
 
-      // Store original text in data attribute before replacing
-      const originalText = node.nodeValue || "";
+      // Store complete original HTML content of parent element before any modifications
+      if (parentElement && !isTranslated) {
+        // Store original HTML content before first modification to this element
+        if (!parentElement.getAttribute("data-original-text")) {
+          parentElement.setAttribute(
+            "data-original-text",
+            parentElement.innerHTML || ""
+          );
+        }
+        parentElement.setAttribute("data-translation", "true");
+      }
 
       // Check if the translated text contains HTML (spans with tooltips)
       if (translatedText.includes('<span class="translated-term"')) {
@@ -233,12 +252,6 @@ export class PageTranslator {
       } else {
         // Plain text replacement
         node.nodeValue = translatedText;
-      }
-
-      // Mark parent element as translated and store original text
-      if (parentElement) {
-        parentElement.setAttribute("data-translation", "true");
-        parentElement.setAttribute("data-original-text", originalText);
       }
     }
   }
@@ -349,19 +362,6 @@ export class PageTranslator {
     }
   }
 
-  private escapeRegExp(string: string): string {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  private escapeHtml(string: string): string {
-    return string
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
   public restoreOriginalText(rootElement: HTMLElement): void {
     this.restoreOriginalTextFromDataAttributes(rootElement);
   }
@@ -371,14 +371,14 @@ export class PageTranslator {
       '[data-translation="true"]'
     );
     translatedElements.forEach((element) => {
-      const originalText = element.getAttribute("data-original-text");
-      if (originalText) {
-        // Replace the element's content with the original text
-        element.textContent = originalText;
+      const originalHTML = element.getAttribute("data-original-text");
+      if (originalHTML) {
+        // Replace the element's content with the original HTML
+        element.innerHTML = originalHTML;
 
         // Update data-translation attribute to false instead of removing it
         element.setAttribute("data-translation", "false");
-        // Keep the original text attribute for potential future use
+        // Keep the original HTML attribute for potential future use
       }
     });
   }
@@ -480,7 +480,7 @@ export class PageTranslator {
         const updatedText = this.applyTermsReplacement(
           textNode.nodeValue || ""
         );
-        this.updateTextNode(textNode, updatedText);
+        this.updateTextNode(textNode, updatedText, true);
       }
     });
   }
