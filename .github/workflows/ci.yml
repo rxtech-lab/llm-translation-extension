@@ -1,33 +1,71 @@
-name: Build and Zip Chrome Extension
+name: CI - Test and Build
 
 on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build
-    timeout-minutes: 15
+  test:
+    name: Test
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
- 
+
       - name: Setup Node.js environment
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'yarn'
- 
-      - name: Install dependencies
-        run: yarn
- 
-      - name: Build Chrome
-        run: yarn build:chrome
 
-      - name: Upload Chrome extension artifacts
-        uses: actions/upload-artifact@v3
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          name: vite-web-extension-chrome
-          path: dist_chrome
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+  build:
+    name: Build
+    needs: test
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chrome, firefox]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build extension
+        run: pnpm build:${{ matrix.browser }}
+
+      - name: Upload ${{ matrix.browser }} extension artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vite-web-extension-${{ matrix.browser }}
+          path: dist_${{ matrix.browser }}
