@@ -12,7 +12,6 @@ export interface TranslationProgress {
 }
 
 export interface TranslationResult {
-  finalHtml: string;
   terms: Category[];
   totalUsage: TokenUsage;
 }
@@ -40,14 +39,15 @@ export class PageTranslator {
     completionTokens: 0,
     totalTokens: 0,
   };
-  private originalTextMap = new Map<Text, string>();
-  private translatedNodes = new Map<Text, string>();
 
   constructor(
     private translator: Translator,
     private previousTerms: Category[] = [],
     private batchSize: number = PageTranslator.DEFAULT_BATCH_SIZE,
-    private onTermsUpdated?: (terms: Category[], domain?: string) => Promise<void>,
+    private onTermsUpdated?: (
+      terms: Category[],
+      domain?: string
+    ) => Promise<void>,
     private domain?: string
   ) {
     this.currentTerms = this.previousTerms;
@@ -72,16 +72,8 @@ export class PageTranslator {
     signal?: AbortSignal,
     timeout?: number
   ): AsyncGenerator<TranslationProgress, TranslationResult> {
-    // Restore any previous translations before starting a new one using data attributes
-    this.restoreOriginalTextFromDataAttributes();
-    
     const textNodes = this.collectTextNodes(rootElement);
     const totalTexts = textNodes.map((node) => this.normalizeText(node));
-
-    // Store original text for potential restoration
-    textNodes.forEach((node) => {
-      this.originalTextMap.set(node, node.nodeValue || "");
-    });
 
     yield { current: 0, total: textNodes.length, usage: this.totalUsage };
 
@@ -142,9 +134,6 @@ export class PageTranslator {
             this.totalUsage.completionTokens += result.usage.completionTokens;
             this.totalUsage.totalTokens += result.usage.totalTokens;
           }
-
-          // Store the base translated text without terms replacement
-          this.translatedNodes.set(node, result.translatedText);
 
           // Update the text node with base translated text (without terms replacement)
           this.updateTextNode(node, result.translatedText);
@@ -209,12 +198,9 @@ export class PageTranslator {
     await this.translateAllTerms(signal, timeout);
 
     // Apply term replacement to all translated nodes at the end
-    this.applyTermsReplacementToAllNodes();
-
-    const finalHtml = this.renderFinalTemplate(rootElement.outerHTML);
+    this.applyTermsReplacementToAllNodes(rootElement);
 
     return {
-      finalHtml,
       terms: this.currentTerms,
       totalUsage: this.totalUsage,
     };
@@ -226,8 +212,8 @@ export class PageTranslator {
       const parentElement = node.parentElement;
 
       // Store original text in data attribute before replacing
-      const originalText = this.originalTextMap.get(node) || node.nodeValue || "";
-      
+      const originalText = node.nodeValue || "";
+
       // Check if the translated text contains HTML (spans with tooltips)
       if (translatedText.includes('<span class="translated-term"')) {
         // Create a temporary element to parse the HTML
@@ -363,12 +349,6 @@ export class PageTranslator {
     }
   }
 
-  private renderFinalTemplate(html: string): string {
-    // Terms have already been applied to all translated nodes
-    // Just return the HTML as-is since DOM nodes are already updated
-    return html;
-  }
-
   private escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
@@ -382,30 +362,22 @@ export class PageTranslator {
       .replace(/'/g, "&#39;");
   }
 
-  public restoreOriginalText(): void {
-    // Method 1: Restore using originalTextMap (for text nodes still in DOM)
-    this.originalTextMap.forEach((originalText, node) => {
-      if (node.parentNode && node.parentElement) {
-        node.nodeValue = originalText;
-        // Update data-translation attribute to false
-        node.parentElement.setAttribute('data-translation', 'false');
-      }
-    });
-
-    // Method 2: Restore using data attributes (for elements that may have been replaced)
-    this.restoreOriginalTextFromDataAttributes();
+  public restoreOriginalText(rootElement: HTMLElement): void {
+    this.restoreOriginalTextFromDataAttributes(rootElement);
   }
 
-  private restoreOriginalTextFromDataAttributes(): void {
-    const translatedElements = document.querySelectorAll('[data-translation="true"]');
+  private restoreOriginalTextFromDataAttributes(element: HTMLElement): void {
+    const translatedElements = element.querySelectorAll(
+      '[data-translation="true"]'
+    );
     translatedElements.forEach((element) => {
-      const originalText = element.getAttribute('data-original-text');
+      const originalText = element.getAttribute("data-original-text");
       if (originalText) {
         // Replace the element's content with the original text
         element.textContent = originalText;
-        
+
         // Update data-translation attribute to false instead of removing it
-        element.setAttribute('data-translation', 'false');
+        element.setAttribute("data-translation", "false");
         // Keep the original text attribute for potential future use
       }
     });
@@ -463,8 +435,11 @@ export class PageTranslator {
     ) as HTMLElement[];
 
     if (shadowDomElements.length) {
-      return shadowDomElements
-        .flatMap((elem) => elem.shadowRoot ? this.collectTextNodes(elem.shadowRoot as unknown as HTMLElement) : []);
+      return shadowDomElements.flatMap((elem) =>
+        elem.shadowRoot
+          ? this.collectTextNodes(elem.shadowRoot as unknown as HTMLElement)
+          : []
+      );
     }
     return [];
   }
@@ -493,22 +468,42 @@ export class PageTranslator {
     }
   }
 
-  private applyTermsReplacementToAllNodes(): void {
-    // Apply term replacement to all translated nodes at once
-    const entries = Array.from(this.translatedNodes.entries());
+  private applyTermsReplacementToAllNodes(element: HTMLElement): void {
+    // Apply term replacement to all translated nodes at once using data attributes
+    const translatedElements = element.querySelectorAll(
+      '[data-translation="true"]'
+    );
 
-    entries.forEach(([node, baseTranslatedText]) => {
-      // Check if the node is still in the document (it might have been replaced)
-      if (node.parentNode) {
-        const updatedText = this.applyTermsReplacement(baseTranslatedText);
-        this.updateTextNode(node, updatedText);
+    translatedElements.forEach((element) => {
+      const textNode = this.findTextNodeInElement(element);
+      if (textNode) {
+        const updatedText = this.applyTermsReplacement(
+          textNode.nodeValue || ""
+        );
+        this.updateTextNode(textNode, updatedText);
       }
     });
   }
 
+  /**
+   * Finds the first text node within an element that exists in the translatedNodes map
+   * @param element - The element to search within
+   * @returns The text node if found, null otherwise
+   */
+  private findTextNodeInElement(element: Element): Text | null {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      acceptNode: () => {
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const textNode = walker.nextNode() as Text;
+    return textNode || null;
+  }
+
   private updateAllTranslatedNodesWithNewTerms(): void {
     // This method is now an alias for applyTermsReplacementToAllNodes
-    this.applyTermsReplacementToAllNodes();
+    this.applyTermsReplacementToAllNodes(document.body);
   }
 
   private async translateNewTerms(

@@ -140,7 +140,6 @@ describe("PageTranslator", () => {
     });
 
     // Final result should contain translated HTML and terms
-    expect(finalResult).toHaveProperty("finalHtml");
     expect(finalResult).toHaveProperty("terms");
     expect(finalResult).toHaveProperty("totalUsage");
     // @ts-expect-error Skip type checking for this test
@@ -229,7 +228,7 @@ describe("PageTranslator", () => {
     expect(element.textContent).toBe("[TRANSLATED] Original text");
 
     // Restore original
-    translator.restoreOriginalText();
+    translator.restoreOriginalText(element);
     expect(element.textContent).toBe(originalText);
   });
 
@@ -393,7 +392,7 @@ describe("html replacement", () => {
       "在2025年7月4日至7月7日期间,发生了一场大规模且致命的事件这场事件发生在德克萨斯州特别是在在美国德克萨斯州"
     );
 
-    translator.restoreOriginalText();
+    translator.restoreOriginalText(element);
     expect(element.textContent).toContain(
       "From July 4 through July 7, 2025, a large and deadly flood event took place in the Texas Hill Country, particularly in Kerr County, in the U.S. state of Texas."
     );
