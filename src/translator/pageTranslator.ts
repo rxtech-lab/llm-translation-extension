@@ -445,24 +445,26 @@ export class PageTranslator {
   }
 
   private applyTermsReplacement(text: string): string {
-    try {
-      // Step 1: Convert text to nunjucks template by replacing terms with template variables
-      const template = text;
-      const context: { [key: string]: string } = {};
+    // Step 1: Convert text to nunjucks template by replacing terms with template variables
+    const template = text;
+    const context: { [key: string]: string } = {};
 
-      this.currentTerms.forEach((category) => {
-        category.terms.forEach((term) => {
-          if (term.translated && term.translated !== term.original) {
-            context[term.template] = term.translated;
-          }
-        });
+    this.currentTerms.forEach((category) => {
+      category.terms.forEach((term) => {
+        if (term.translated && term.translated !== term.original) {
+          context[term.template.replaceAll("{{", "").replaceAll("}}", "")] =
+            term.translated;
+        }
       });
+    });
 
+    try {
       // Step 2: Render the template with nunjucks
       const env = new nunjucks.Environment();
       return env.renderString(template, context);
     } catch (error) {
       console.error("Failed to render template:", error);
+      console.error("Failed to render template:", text, context);
       // Fallback to original text if nunjucks fails
       return text;
     }

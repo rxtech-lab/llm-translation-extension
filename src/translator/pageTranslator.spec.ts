@@ -8,6 +8,7 @@ import type {
   Translator,
 } from "./llm/translator";
 import { PageTranslator, TranslationProgress } from "./pageTranslator";
+import * as nunjucks from "nunjucks";
 
 class MockTranslator implements Translator {
   async translateText(props: TranslateProps): Promise<TranslateResult> {
@@ -253,6 +254,49 @@ describe("PageTranslator", () => {
     expect((translationUpdates[0] as any).translatedText).toBe(
       "[TRANSLATED] Hello world"
     );
+  });
+
+  it("should be able to replace terms", () => {
+    const env = new nunjucks.Environment();
+    const context = {
+      React_Fundamentals: "React 基础",
+      Workflow: "工作流",
+      "UI_&_Interaction": "UI 与交互",
+      Codegen: "代码生成",
+      JavaScript_Runtime: "JavaScript 运行时",
+      Legacy_Architecture: "遗留架构",
+      components: "组件",
+      Native_Components: "原生组件",
+      views: "视图",
+      platform_backed_components: "平台支持的组件",
+      Core_Components: "核心组件",
+      New_Architecture: "新架构",
+      community_contributed_components: "社区贡献的组件",
+      ecosystem: "生态系统",
+      iOS_View: "iOS 视图",
+      React_Native_UI_Component: "React Native UI 组件",
+      Android_View: "Android 视图",
+      accessibility_controls: "可访问性控件",
+      A_generic_scrolling_container_that_can_contain_multiple_components_and_views:
+        "一个通用的滚动容器，可以包含多个组件和视图",
+      React_components: "React 组件",
+      React_component_APIs: "React 组件 API",
+      skip_ahead: "跳到下一部分",
+      next_release: "下个版本",
+      on: "于",
+      Next: "下一篇",
+      mobile_development: "移动开发",
+      API: "API",
+      Components: "组件",
+      Skip_to_main_content: "跳至主要内容",
+      Community: "社区",
+      Contributing: "贡献",
+      Showcase: "展示",
+    };
+
+    const template = "{{React_Fundamentals}}";
+    const rendered = env.renderString(template, context);
+    expect(rendered).toBe("React 基础");
   });
 });
 
