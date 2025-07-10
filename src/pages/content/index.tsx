@@ -1,7 +1,6 @@
-import { PageTranslator } from "../../translator/pageTranslator";
 import { OpenAILLMTranslator } from "../../translator/llm/openaiTranslator";
 import { Category } from "../../translator/llm/translator";
-import { defaultTermsRenderer } from "../../translator/termsRenderer";
+import { PageTranslator } from "../../translator/pageTranslator";
 import { extractDomain } from "../../utils/domain";
 import "./style.css";
 
@@ -13,12 +12,7 @@ class TranslationContentScript {
 
   constructor() {
     this.setupMessageListener();
-    this.initializeTermsRenderer();
     console.log("Translation content script loaded");
-  }
-
-  private async initializeTermsRenderer() {
-    await defaultTermsRenderer.loadTermsFromStorage();
   }
 
   private setupMessageListener() {
@@ -196,14 +190,6 @@ class TranslationContentScript {
       const currentDomain = extractDomain(window.location.href);
       termsToUpdate = PageTranslator.filterTermsByDomain(terms, currentDomain);
     }
-
-    // Update terms renderer with new terms dictionary
-    defaultTermsRenderer.updateTermsDictionary(termsToUpdate);
-
-    // Process all translated elements and update their text nodes
-    defaultTermsRenderer.processTranslatedElements();
-
-    // Terms will be automatically loaded on next translation
   }
 }
 

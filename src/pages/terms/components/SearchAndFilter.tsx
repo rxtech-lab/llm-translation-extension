@@ -23,6 +23,7 @@ export function SearchAndFilter({ state, categoryOptions, updateState }: SearchA
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="search">Search Terms</Label>
+            {/** biome-ignore lint/nursery/useUniqueElementIds: <explanation> */}
             <Input
               id="search"
               value={state.searchQuery}

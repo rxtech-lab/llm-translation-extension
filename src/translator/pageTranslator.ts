@@ -1,5 +1,5 @@
 import type { Category, Terms, TokenUsage, Translator } from "./llm/translator";
-import * as nunjucks from "nunjucks";
+import { RegexRenderer } from "./renderer";
 import { extractDomain } from "../utils/domain";
 
 export interface TranslationProgress {
@@ -39,6 +39,7 @@ export class PageTranslator {
     completionTokens: 0,
     totalTokens: 0,
   };
+  private renderer = new RegexRenderer();
 
   constructor(
     private translator: Translator,
@@ -445,7 +446,7 @@ export class PageTranslator {
   }
 
   private applyTermsReplacement(text: string): string {
-    // Step 1: Convert text to nunjucks template by replacing terms with template variables
+    // Step 1: Convert text to template by replacing terms with template variables
     const template = text;
     const context: { [key: string]: string } = {};
 
@@ -459,13 +460,12 @@ export class PageTranslator {
     });
 
     try {
-      // Step 2: Render the template with nunjucks
-      const env = new nunjucks.Environment();
-      return env.renderString(template, context);
+      // Step 2: Render the template with RegexRenderer
+      return this.renderer.render(template, context);
     } catch (error) {
       console.error("Failed to render template:", error);
       console.error("Failed to render template:", text, context);
-      // Fallback to original text if nunjucks fails
+      // Fallback to original text if rendering fails
       return text;
     }
   }

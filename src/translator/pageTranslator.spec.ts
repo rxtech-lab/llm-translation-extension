@@ -433,7 +433,7 @@ describe("html replacement", () => {
     expect(results.length).toBe(5);
     const finalTranslatedText = element.textContent?.trim();
     expect(finalTranslatedText).toContain(
-      "在2025年7月4日至7月7日期间,发生了一场大规模且致命的事件这场事件发生在德克萨斯州"
+      "在2025年7月4日至7月7日期间,德克萨斯州山地发生了一场大规模且致命的洪水事件这场事件发生在德克萨斯州."
     );
 
     translator.restoreOriginalText(element);
@@ -453,7 +453,7 @@ describe("html replacement", () => {
     }
     expect(results.length).toBe(5);
     expect(element.textContent).toContain(
-      "在2025年7月4日至7月7日期间,发生了一场大规模且致命的事件这场事件发生在德克萨斯州"
+      "在2025年7月4日至7月7日期间,德克萨斯州山地发生了一场大规模且致命的洪水事件这场事件发生在德克萨斯州."
     );
   });
 });

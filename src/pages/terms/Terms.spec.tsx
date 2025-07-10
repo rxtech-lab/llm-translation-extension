@@ -17,6 +17,10 @@ import "@testing-library/jest-dom";
 const mockChrome = {
   runtime: {
     sendMessage: vi.fn(),
+    onMessage: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    },
   },
 };
 
@@ -68,6 +72,10 @@ describe("Terms Component", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Reset onMessage mocks
+    mockChrome.runtime.onMessage.addListener.mockClear();
+    mockChrome.runtime.onMessage.removeListener.mockClear();
 
     // Default mock responses
     mockChrome.runtime.sendMessage.mockImplementation(async (message) => {
