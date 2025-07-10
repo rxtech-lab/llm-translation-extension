@@ -22,14 +22,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case "getSettings":
       handleGetSettings(sendResponse);
-      return true; // Keep message channel open for async response
+      return true;
 
     case "saveTerms":
-      handleSaveTerms(message.terms, sendResponse);
+      handleSaveTerms(message.terms, message.domain, sendResponse);
       return true;
 
     case "getTerms":
-      handleGetTerms(sendResponse);
+      handleGetTerms(message.domain, sendResponse);
+      return true;
+
+    case "getDomains":
+      handleGetDomains(sendResponse);
       return true;
 
     case "getTranslationState":
@@ -42,11 +46,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case "translationError":
       console.error("Translation error:", message.error);
-      return true;
+      break;
 
     default:
       sendResponse({ success: false, error: "Unknown action" });
   }
+  return false;
 });
 
 async function handleGetSettings(sendResponse: (response: any) => void) {
@@ -66,33 +71,35 @@ async function handleGetSettings(sendResponse: (response: any) => void) {
 
 async function handleSaveTerms(
   terms: any,
-  sendResponse: (response: any) => void
+  domain: string | undefined,
+  sendResponse: (response: any) => void,
 ) {
   try {
-    // Support both old format (array) and new format (object with domains)
-    if (Array.isArray(terms)) {
-      // Convert old format to new format with "unknown" domain
-      const termsByDomain = { unknown: terms };
-      await chrome.storage.local.set({
-        translationTermsByDomain: termsByDomain,
-      });
+    const result = await chrome.storage.local.get(["translationTermsByDomain"]);
+    const termsByDomain = result.translationTermsByDomain || {};
+
+    if (domain) {
+      termsByDomain[domain] = terms;
+    } else if (Array.isArray(terms)) {
+      termsByDomain["unknown"] = terms;
     } else {
-      // New format: object with domains
-      await chrome.storage.local.set({ translationTermsByDomain: terms });
+      Object.assign(termsByDomain, terms);
     }
 
-    // Notify all content scripts about updated terms
+    await chrome.storage.local.set({
+      translationTermsByDomain: termsByDomain,
+    });
+
     const tabs = await chrome.tabs.query({});
     tabs.forEach((tab) => {
       if (tab.id) {
         chrome.tabs
           .sendMessage(tab.id, {
             action: "termsUpdated",
-            terms,
+            domain: domain,
+            terms: termsByDomain,
           })
-          .catch(() => {
-            // Ignore errors for tabs without content script
-          });
+          .catch(() => {});
       }
     });
 
@@ -105,39 +112,57 @@ async function handleSaveTerms(
   }
 }
 
-async function handleGetTerms(sendResponse: (response: any) => void) {
+async function handleGetTerms(
+  domain: string | undefined,
+  sendResponse: (response: any) => void,
+) {
   try {
-    // Try new format first
     const result = await chrome.storage.local.get([
       "translationTermsByDomain",
       "translationTerms",
     ]);
 
-    if (result.translationTermsByDomain) {
-      sendResponse({
-        success: true,
-        terms: result.translationTermsByDomain,
-      });
-    } else if (result.translationTerms) {
-      // Migrate old format to new format
-      const termsByDomain = { unknown: result.translationTerms };
+    let termsByDomain = result.translationTermsByDomain;
+
+    if (!termsByDomain && result.translationTerms) {
+      termsByDomain = { unknown: result.translationTerms };
       await chrome.storage.local.set({
         translationTermsByDomain: termsByDomain,
       });
+    }
+
+    termsByDomain = termsByDomain || {};
+
+    if (domain) {
       sendResponse({
         success: true,
-        terms: termsByDomain,
+        terms: termsByDomain[domain] || [],
       });
     } else {
       sendResponse({
         success: true,
-        terms: {},
+        terms: termsByDomain,
       });
     }
   } catch (error) {
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : "Failed to get terms",
+    });
+  }
+}
+
+async function handleGetDomains(sendResponse: (response: any) => void) {
+  try {
+    const result = await chrome.storage.local.get(["translationTermsByDomain"]);
+    const domains = result.translationTermsByDomain
+      ? Object.keys(result.translationTermsByDomain)
+      : [];
+    sendResponse({ success: true, domains });
+  } catch (error) {
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to get domains",
     });
   }
 }

@@ -131,19 +131,11 @@ class TranslationContentScript {
         // Save updated terms
         //@ts-expect-error
         if (finalResult?.value?.terms) {
-          // Get current domain-based terms
-          const result = await chrome.storage.local.get([
-            "translationTermsByDomain",
-          ]);
-          const termsByDomain = result.translationTermsByDomain || {};
-
-          // Update terms for the current domain
-          //@ts-expect-error
-          termsByDomain[currentDomain] = finalResult.value.terms;
-
-          // Save updated terms
-          await chrome.storage.local.set({
-            translationTermsByDomain: termsByDomain,
+          await chrome.runtime.sendMessage({
+            action: "saveTerms",
+            //@ts-expect-error
+            terms: finalResult.value.terms,
+            domain: currentDomain,
           });
         }
 

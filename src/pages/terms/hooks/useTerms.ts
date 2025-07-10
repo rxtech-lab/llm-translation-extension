@@ -489,8 +489,28 @@ export function useTerms() {
   useEffect(() => {
     if (state.selectedDomain && state.selectedDomain !== "all") {
       loadTermsForDomain(state.selectedDomain);
+    } else if (state.selectedDomain === "all") {
+      loadAllTerms(state.domains);
     }
-  }, [state.selectedDomain, loadTermsForDomain]);
+  }, [state.selectedDomain, loadTermsForDomain, loadAllTerms, state.domains]);
+
+  useEffect(() => {
+    const handleMessage = (message: { action: string; domain: string }) => {
+      if (message.action === "termsUpdated") {
+        if (state.selectedDomain === "all") {
+          loadAllTerms(state.domains);
+        } else if (state.selectedDomain === message.domain) {
+          loadTermsForDomain(message.domain);
+        }
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleMessage);
+
+    return () => {
+      chrome.runtime.onMessage.removeListener(handleMessage);
+    };
+  }, [state.selectedDomain, state.domains, loadAllTerms, loadTermsForDomain]);
 
   return {
     state,
