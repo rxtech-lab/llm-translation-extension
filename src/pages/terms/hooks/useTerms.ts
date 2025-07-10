@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Category, Terms as TermsType } from "../../../translator/llm/translator";
+import type {
+  Category,
+  Terms as TermsType,
+} from "../../../translator/llm/translator";
 
 export interface TermsPageState {
   categories: Category[];
@@ -35,6 +38,7 @@ const initialState: TermsPageState = {
 export function useTerms() {
   const [state, setState] = useState<TermsPageState>(initialState);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   const loadDomainsAndTerms = useCallback(async () => {
     try {
       const response = await chrome.runtime.sendMessage({
@@ -98,40 +102,46 @@ export function useTerms() {
     }
   }, []);
 
-  const saveTerms = useCallback(async (categories?: Category[]) => {
-    const categoriesToSave = categories || state.categories;
-    const domain =
-      state.selectedDomain === "all" ? "general" : state.selectedDomain;
+  const saveTerms = useCallback(
+    async (categories?: Category[]) => {
+      const categoriesToSave = categories || state.categories;
+      const domain =
+        state.selectedDomain === "all" ? "general" : state.selectedDomain;
 
-    try {
-      await chrome.runtime.sendMessage({
-        action: "saveTerms",
-        terms: categoriesToSave,
-        domain,
-      });
-    } catch (error) {
-      console.error("Failed to save terms:", error);
-    }
-  }, [state.categories, state.selectedDomain]);
-
-  const saveTermsForDomain = useCallback(async (categories: Category[], domain: string) => {
-    try {
-      await chrome.runtime.sendMessage({
-        action: "saveTerms",
-        terms: categories,
-        domain,
-      });
-
-      if (!state.domains.includes(domain)) {
-        setState((prev) => ({
-          ...prev,
-          domains: [...prev.domains, domain],
-        }));
+      try {
+        await chrome.runtime.sendMessage({
+          action: "saveTerms",
+          terms: categoriesToSave,
+          domain,
+        });
+      } catch (error) {
+        console.error("Failed to save terms:", error);
       }
-    } catch (error) {
-      console.error("Failed to save terms for domain:", error);
-    }
-  }, [state.domains]);
+    },
+    [state.categories, state.selectedDomain]
+  );
+
+  const saveTermsForDomain = useCallback(
+    async (categories: Category[], domain: string) => {
+      try {
+        await chrome.runtime.sendMessage({
+          action: "saveTerms",
+          terms: categories,
+          domain,
+        });
+
+        if (!state.domains.includes(domain)) {
+          setState((prev) => ({
+            ...prev,
+            domains: [...prev.domains, domain],
+          }));
+        }
+      } catch (error) {
+        console.error("Failed to save terms for domain:", error);
+      }
+    },
+    [state.domains]
+  );
 
   const addNewTerm = useCallback(async () => {
     if (!state.newTerm.original || !state.newTerm.translated) return;
@@ -199,7 +209,15 @@ export function useTerms() {
       console.error("Failed to add new term:", error);
       toast.error("Failed to add new term. Please try again.");
     }
-  }, [state.newTerm, state.newDomainForTerm, state.selectedCategory, state.selectedDomain, state.domains, saveTermsForDomain, loadAllTerms]);
+  }, [
+    state.newTerm,
+    state.newDomainForTerm,
+    state.selectedCategory,
+    state.selectedDomain,
+    state.domains,
+    saveTermsForDomain,
+    loadAllTerms,
+  ]);
 
   const editTerm = useCallback((term: TermsType & { categoryName: string }) => {
     setState((prev) => ({
@@ -292,7 +310,14 @@ export function useTerms() {
       originalEditingTerm: null,
       isDialogOpen: false,
     }));
-  }, [state.editingTerm, state.originalEditingTerm, state.selectedDomain, state.domains, loadAllTerms, saveTerms]);
+  }, [
+    state.editingTerm,
+    state.originalEditingTerm,
+    state.selectedDomain,
+    state.domains,
+    loadAllTerms,
+    saveTerms,
+  ]);
 
   const cancelEdit = useCallback(() => {
     setState((prev) => ({
@@ -303,74 +328,79 @@ export function useTerms() {
     }));
   }, []);
 
-  const deleteTerm = useCallback(async (termToDelete: TermsType & { categoryName: string }) => {
-    try {
-      if (state.selectedDomain === "all") {
-        const domainMatch = termToDelete.categoryName.match(/^(.+?) - (.+)$/);
-        if (domainMatch) {
-          const [, domain, originalCategoryName] = domainMatch;
+  const deleteTerm = useCallback(
+    async (termToDelete: TermsType & { categoryName: string }) => {
+      try {
+        if (state.selectedDomain === "all") {
+          const domainMatch = termToDelete.categoryName.match(/^(.+?) - (.+)$/);
+          if (domainMatch) {
+            const [, domain, originalCategoryName] = domainMatch;
 
-          const response = await chrome.runtime.sendMessage({
-            action: "getTerms",
-            domain,
-          });
+            const response = await chrome.runtime.sendMessage({
+              action: "getTerms",
+              domain,
+            });
 
-          if (response.success && response.terms) {
-            const updatedCategories = response.terms
-              .map((cat: Category) => {
-                if (cat.name === originalCategoryName) {
+            if (response.success && response.terms) {
+              const updatedCategories = response.terms
+                .map((cat: Category) => {
+                  if (cat.name === originalCategoryName) {
+                    return {
+                      ...cat,
+                      terms: cat.terms.filter(
+                        (term: TermsType) =>
+                          term.original !== termToDelete.original
+                      ),
+                    };
+                  }
+                  return cat;
+                })
+                .filter((cat: Category) => cat.terms.length > 0);
+
+              await chrome.runtime.sendMessage({
+                action: "saveTerms",
+                terms: updatedCategories,
+                domain,
+              });
+
+              await loadAllTerms(state.domains);
+              toast.success(
+                `Term "${termToDelete.original}" deleted successfully`
+              );
+            } else {
+              toast.error("Failed to delete term. Please try again.");
+            }
+          }
+        } else {
+          setState((prev) => {
+            const categories = prev.categories
+              .map((cat) => {
+                if (cat.name === termToDelete.categoryName) {
                   return {
                     ...cat,
                     terms: cat.terms.filter(
-                      (term: TermsType) =>
-                        term.original !== termToDelete.original
+                      (term) => term.original !== termToDelete.original
                     ),
                   };
                 }
                 return cat;
               })
-              .filter((cat: Category) => cat.terms.length > 0);
+              .filter((cat) => cat.terms.length > 0);
 
-            await chrome.runtime.sendMessage({
-              action: "saveTerms",
-              terms: updatedCategories,
-              domain,
-            });
+            saveTerms(categories);
 
-            await loadAllTerms(state.domains);
-            toast.success(`Term "${termToDelete.original}" deleted successfully`);
-          } else {
-            toast.error("Failed to delete term. Please try again.");
-          }
+            return { ...prev, categories };
+          });
+
+          toast.success(`Term "${termToDelete.original}" deleted successfully`);
         }
-      } else {
-        setState((prev) => {
-          const categories = prev.categories
-            .map((cat) => {
-              if (cat.name === termToDelete.categoryName) {
-                return {
-                  ...cat,
-                  terms: cat.terms.filter(
-                    (term) => term.original !== termToDelete.original
-                  ),
-                };
-              }
-              return cat;
-            })
-            .filter((cat) => cat.terms.length > 0);
-
-          saveTerms(categories);
-
-          return { ...prev, categories };
-        });
-
-        toast.success(`Term "${termToDelete.original}" deleted successfully`);
+      } catch (error) {
+        console.error("Failed to delete term:", error);
+        toast.error("Failed to delete term. Please try again.");
       }
-    } catch (error) {
-      console.error("Failed to delete term:", error);
-      toast.error("Failed to delete term. Please try again.");
-    }
-  }, [state.selectedDomain, state.domains, loadAllTerms, saveTerms]);
+    },
+    [state.selectedDomain, state.domains, loadAllTerms, saveTerms]
+  );
 
   const clearAllTerms = useCallback(async () => {
     try {
@@ -445,9 +475,12 @@ export function useTerms() {
     return ["all", ...categories];
   }, [state.categories]);
 
-  const updateState = useCallback((updater: (prev: TermsPageState) => TermsPageState) => {
-    setState(updater);
-  }, []);
+  const updateState = useCallback(
+    (updater: (prev: TermsPageState) => TermsPageState) => {
+      setState(updater);
+    },
+    []
+  );
 
   useEffect(() => {
     loadDomainsAndTerms();

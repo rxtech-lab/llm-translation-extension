@@ -73,7 +73,9 @@ async function handleSaveTerms(
     if (Array.isArray(terms)) {
       // Convert old format to new format with "unknown" domain
       const termsByDomain = { unknown: terms };
-      await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
+      await chrome.storage.local.set({
+        translationTermsByDomain: termsByDomain,
+      });
     } else {
       // New format: object with domains
       await chrome.storage.local.set({ translationTermsByDomain: terms });
@@ -106,8 +108,11 @@ async function handleSaveTerms(
 async function handleGetTerms(sendResponse: (response: any) => void) {
   try {
     // Try new format first
-    const result = await chrome.storage.local.get(["translationTermsByDomain", "translationTerms"]);
-    
+    const result = await chrome.storage.local.get([
+      "translationTermsByDomain",
+      "translationTerms",
+    ]);
+
     if (result.translationTermsByDomain) {
       sendResponse({
         success: true,
@@ -116,7 +121,9 @@ async function handleGetTerms(sendResponse: (response: any) => void) {
     } else if (result.translationTerms) {
       // Migrate old format to new format
       const termsByDomain = { unknown: result.translationTerms };
-      await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
+      await chrome.storage.local.set({
+        translationTermsByDomain: termsByDomain,
+      });
       sendResponse({
         success: true,
         terms: termsByDomain,

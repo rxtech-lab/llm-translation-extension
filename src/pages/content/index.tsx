@@ -59,11 +59,14 @@ class TranslationContentScript {
     try {
       // Get current domain
       const currentDomain = extractDomain(window.location.href);
-      
+
       // Load existing terms for this domain
-      const termsResult = await chrome.storage.local.get(["translationTermsByDomain", "translationTerms"]);
+      const termsResult = await chrome.storage.local.get([
+        "translationTermsByDomain",
+        "translationTerms",
+      ]);
       let existingTerms: Category[] = [];
-      
+
       if (termsResult.translationTermsByDomain) {
         existingTerms = PageTranslator.filterTermsByDomain(
           termsResult.translationTermsByDomain,
@@ -86,36 +89,11 @@ class TranslationContentScript {
 
       // Callback function to save terms to Chrome storage
       const saveTermsCallback = async (terms: Category[], domain?: string) => {
-        try {
-          console.log("Saving terms for domain:", domain || currentDomain, terms);
-          
-          // Get current domain-based terms
-          const result = await chrome.storage.local.get(["translationTermsByDomain"]);
-          const termsByDomain = result.translationTermsByDomain || {};
-          
-          // Update terms for the current domain
-          termsByDomain[domain || currentDomain] = terms;
-          
-          // Save updated terms
-          await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
-
-          // Notify all tabs about updated terms
-          const tabs = await chrome.tabs.query({});
-          tabs.forEach((tab) => {
-            if (tab.id) {
-              chrome.tabs
-                .sendMessage(tab.id, {
-                  action: "termsUpdated",
-                  terms: termsByDomain,
-                })
-                .catch(() => {
-                  // Ignore errors for tabs without content script
-                });
-            }
-          });
-        } catch (error) {
-          console.error("Failed to save terms during translation:", error);
-        }
+        await chrome.runtime.sendMessage({
+          action: "saveTerms",
+          terms: terms,
+          domain,
+        });
       };
 
       this.translator = new PageTranslator(
@@ -154,15 +132,19 @@ class TranslationContentScript {
         //@ts-expect-error
         if (finalResult?.value?.terms) {
           // Get current domain-based terms
-          const result = await chrome.storage.local.get(["translationTermsByDomain"]);
+          const result = await chrome.storage.local.get([
+            "translationTermsByDomain",
+          ]);
           const termsByDomain = result.translationTermsByDomain || {};
-          
+
           // Update terms for the current domain
           //@ts-expect-error
           termsByDomain[currentDomain] = finalResult.value.terms;
-          
+
           // Save updated terms
-          await chrome.storage.local.set({ translationTermsByDomain: termsByDomain });
+          await chrome.storage.local.set({
+            translationTermsByDomain: termsByDomain,
+          });
         }
 
         chrome.runtime.sendMessage({
@@ -207,7 +189,9 @@ class TranslationContentScript {
     }
   }
 
-  private handleTermsUpdated(terms: { [domain: string]: Category[] } | Category[]) {
+  private handleTermsUpdated(
+    terms: { [domain: string]: Category[] } | Category[]
+  ) {
     console.log("Terms updated:", terms);
 
     // Handle both old format (array) and new format (object)
